@@ -29,6 +29,10 @@ class WorkerJob:
     # allowed to delegate to via orchestrator.delegate. None for regular
     # (non-routing) runs.
     allowed_packs: Optional[List[str]] = None
+    # Prior {role, content} messages to seed the conversation. Used when
+    # this run is the next turn of an ongoing conversation. None for the
+    # first turn / non-conversation runs (e.g. evals).
+    history: Optional[List[dict]] = None
     # Files uploaded in this conversation. Each entry is a metadata dict
     # ({file_id, name, size, mime, path, ...}). Propagated to every agent
     # via ToolCtx.files; the sub-agent loop surfaces it in the system prompt.
@@ -85,7 +89,7 @@ def _run(conn: Connection, job: WorkerJob) -> None:
     )
 
     try:
-        stats = subagent.run(bound, job.user_message, ctx, emit)
+        stats = subagent.run(bound, job.user_message, ctx, emit, history=job.history)
     except Exception as e:
         emit(worker_proto.error(str(e), traceback.format_exc()))
         return

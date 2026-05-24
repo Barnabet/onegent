@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 audit_logs/
 uploads/
+conversations/
 .DS_Store
 .acode/
 evals/results/*.jsonl

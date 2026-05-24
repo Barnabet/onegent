@@ -15,7 +15,6 @@ from typing import Any
 EV_MODEL_TEXT = "model_text"
 EV_TOOL_CALL = "tool_call"
 EV_TOOL_RESULT = "tool_result"
-EV_SKILL_ACTIVATED = "skill_activated"
 EV_DONE = "done"
 EV_ERROR = "error"
 
@@ -30,10 +29,6 @@ def tool_call(name: str, args: dict, call_id: str) -> dict:
 
 def tool_result(name: str, call_id: str, ok: bool, payload: Any) -> dict:
     return {"type": EV_TOOL_RESULT, "name": name, "call_id": call_id, "ok": ok, "payload": payload}
-
-
-def skill_activated(name: str) -> dict:
-    return {"type": EV_SKILL_ACTIVATED, "name": name}
 
 
 def done(final: str, stats: dict) -> dict:

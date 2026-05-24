@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type FileMeta, type PackSummary, type RunEvent, type RunSummary } from "@/lib/api";
+import {
+  api,
+  type ConversationDetail,
+  type ConversationSummary,
+  type FileMeta,
+  type RunEvent,
+  type RunSummary,
+} from "@/lib/api";
+import { ConversationsSidebar } from "@/components/ConversationsSidebar";
 import { FilesSidebar } from "@/components/FilesSidebar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Sheet,
   SheetContent,
@@ -14,48 +20,83 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ClassificationBadge } from "@/components/ClassificationBadge";
 import { EventCard } from "@/components/EventCard";
 import { JsonBlock } from "@/components/JsonBlock";
 import { Markdown } from "@/components/Markdown";
-import { Send, Loader2, Database, Settings2, Sparkles } from "lucide-react";
+import { Send, Loader2, Database, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
+/** Per-turn view-model: the user message, the run handle, the live events,
+ *  and the assistant's eventual reply (mirrored into the convo on the server). */
 type Turn = {
   user_message: string;
   run: RunSummary | null;
   events: RunEvent[];
   finished: boolean;
+  assistant_text?: string;
 };
 
 export function ChatPage() {
-  const [packs, setPacks] = useState<PackSummary[]>([]);
-  const [allowed, setAllowed] = useState<Set<string>>(new Set());
-  const [input, setInput] = useState<string>("");
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeDetail, setActiveDetail] = useState<ConversationDetail | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [input, setInput] = useState<string>("");
   const [running, setRunning] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
-  // One conversation_id per ChatPage mount — scopes uploaded files so the
-  // server can group them and we can pass the full set to every run. Lazy
-  // useState initializer keeps the id stable across re-renders.
-  const [conversationId] = useState(
-    () => `conv_${Math.random().toString(36).slice(2, 14)}`,
-  );
-  const [files, setFiles] = useState<FileMeta[]>([]);
-  const [uploading, setUploading] = useState(false);
+  // ---- conversation list -------------------------------------------------
 
-  // Load specialist packs (everything except 'router').
+  async function refreshConversations(): Promise<ConversationSummary[]> {
+    try {
+      const list = await api.conversations();
+      setConversations(list);
+      return list;
+    } catch (e) {
+      toast.error(`Failed to load conversations: ${(e as Error).message}`);
+      return [];
+    }
+  }
+
+  // Initial load: list conversations, auto-select the most recent, or
+  // create one if none exist.
   useEffect(() => {
-    api
-      .packs()
-      .then((ps) => {
-        const specialists = ps.filter((p) => !p.error && p.name !== "router");
-        setPacks(specialists);
-        setAllowed(new Set(specialists.map((p) => p.name)));
-      })
-      .catch((e) => toast.error(`Failed to load packs: ${e.message}`));
+    (async () => {
+      const list = await refreshConversations();
+      if (list.length > 0) {
+        setActiveId(list[0].id);
+      } else {
+        try {
+          const created = await api.createConversation();
+          setActiveId(created.id);
+          await refreshConversations();
+        } catch (e) {
+          toast.error(`Failed to create conversation: ${(e as Error).message}`);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When the active conversation changes: load its detail, project messages
+  // into the turns view, drop any in-flight stream.
+  useEffect(() => {
+    if (!activeId) {
+      setActiveDetail(null);
+      setTurns([]);
+      return;
+    }
+    (async () => {
+      try {
+        const d = await api.conversation(activeId);
+        setActiveDetail(d);
+        setTurns(messagesToTurns(d));
+      } catch (e) {
+        toast.error(`Failed to load conversation: ${(e as Error).message}`);
+      }
+    })();
+  }, [activeId]);
 
   // Auto-scroll to latest turn.
   useEffect(() => {
@@ -63,19 +104,69 @@ export function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
+  // ---- conversation actions ----------------------------------------------
+
+  async function createConversation() {
+    try {
+      const c = await api.createConversation();
+      await refreshConversations();
+      setActiveId(c.id);
+    } catch (e) {
+      toast.error(`Failed to create conversation: ${(e as Error).message}`);
+    }
+  }
+
+  async function renameConversation(id: string, title: string) {
+    try {
+      await api.renameConversation(id, title);
+      await refreshConversations();
+    } catch (e) {
+      toast.error(`Rename failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function deleteConversation(id: string) {
+    if (!confirm("Delete this conversation? Attached files will be removed too.")) {
+      return;
+    }
+    try {
+      await api.deleteConversation(id);
+      const list = await refreshConversations();
+      if (activeId === id) {
+        if (list.length > 0) setActiveId(list[0].id);
+        else {
+          // None left — spin up a fresh one to keep the UI usable.
+          const created = await api.createConversation();
+          setActiveId(created.id);
+          await refreshConversations();
+        }
+      }
+    } catch (e) {
+      toast.error(`Delete failed: ${(e as Error).message}`);
+    }
+  }
+
+  // ---- files -------------------------------------------------------------
+
+  const files: FileMeta[] = activeDetail?.files ?? [];
+
   async function handleUpload(list: FileList) {
+    if (!activeId) return;
     setUploading(true);
     try {
       const uploaded: FileMeta[] = [];
       for (const f of Array.from(list)) {
         try {
-          uploaded.push(await api.uploadFile(conversationId, f));
+          uploaded.push(await api.uploadFile(activeId, f));
         } catch (e) {
           toast.error(`Upload failed for ${f.name}: ${(e as Error).message}`);
         }
       }
       if (uploaded.length > 0) {
-        setFiles((prev) => [...prev, ...uploaded]);
+        // Refresh conversation so its file_ids/files reflect the upload.
+        const d = await api.conversation(activeId);
+        setActiveDetail(d);
+        await refreshConversations();
         toast.success(
           uploaded.length === 1
             ? `Uploaded ${uploaded[0].name}`
@@ -88,19 +179,31 @@ export function ChatPage() {
   }
 
   async function handleDeleteFile(file_id: string) {
-    const prev = files;
-    setFiles((p) => p.filter((f) => f.file_id !== file_id));
+    if (!activeId) return;
+    const prev = activeDetail;
+    setActiveDetail((p) =>
+      p
+        ? {
+            ...p,
+            file_ids: p.file_ids.filter((id) => id !== file_id),
+            files: p.files.filter((f) => f.file_id !== file_id),
+          }
+        : p,
+    );
     try {
       await api.deleteFile(file_id);
+      await refreshConversations();
     } catch (e) {
       toast.error(`Delete failed: ${(e as Error).message}`);
-      setFiles(prev);
+      setActiveDetail(prev);
     }
   }
 
+  // ---- send a message ----------------------------------------------------
+
   async function send() {
     const msg = input.trim();
-    if (!msg || running) return;
+    if (!msg || running || !activeId) return;
 
     const turn: Turn = { user_message: msg, run: null, events: [], finished: false };
     setTurns((prev) => [...prev, turn]);
@@ -109,7 +212,7 @@ export function ChatPage() {
 
     let started: RunSummary;
     try {
-      started = await api.startRun(msg, Array.from(allowed), files);
+      started = await api.startRun(msg, activeId);
     } catch (e) {
       toast.error(`Failed to start run: ${(e as Error).message}`);
       setRunning(false);
@@ -133,12 +236,16 @@ export function ChatPage() {
               ...next[next.length - 1],
               run: data,
               finished: true,
+              assistant_text: data.final_text || next[next.length - 1].assistant_text,
             };
             return next;
           });
           setRunning(false);
           es.close();
           if (data.status === "error") toast.error(`Run failed: ${data.error}`);
+          // Refresh conversation list so the title (auto-derived from the
+          // first user message) and updated_at are reflected in the sidebar.
+          refreshConversations();
           return;
         }
         setTurns((prev) => {
@@ -152,7 +259,7 @@ export function ChatPage() {
       }
     };
 
-    ["message", "skill_activated", "tool_call", "tool_result", "model_text", "error"].forEach(
+    ["message", "tool_call", "tool_result", "model_text", "error"].forEach(
       (type) => es.addEventListener(type, handle as EventListener),
     );
     es.addEventListener("done", handle as EventListener);
@@ -167,84 +274,34 @@ export function ChatPage() {
     };
   }
 
-  function toggle(name: string) {
-    setAllowed((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }
-
-  function clearTranscript() {
-    setTurns([]);
-  }
+  // ---- render ------------------------------------------------------------
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-6 h-[calc(100vh-7rem)]">
-      {/* Sidebar — orchestrator config */}
-      <aside className="space-y-4 overflow-y-auto pb-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Settings2 className="size-4" />
-              Allowed specialists
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Toggle which packs the orchestrator may delegate to. Disabled
-              packs are invisible to it.
-            </p>
-            <div className="space-y-1.5 pt-1">
-              {packs.length === 0 && (
-                <div className="text-xs text-muted-foreground italic">
-                  Loading...
-                </div>
-              )}
-              {packs.map((p) => (
-                <label
-                  key={p.name}
-                  className="flex items-start gap-2 cursor-pointer rounded-md px-2 py-1.5 hover:bg-accent/40 transition-colors"
-                >
-                  <Checkbox
-                    checked={allowed.has(p.name)}
-                    onCheckedChange={() => toggle(p.name)}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-sm">{p.name}</span>
-                      <ClassificationBadge value={p.classification} />
-                    </div>
-                    <div className="text-xs text-muted-foreground line-clamp-2">
-                      {p.description}
-                    </div>
-                  </div>
-                </label>
-              ))}
-            </div>
-            <div className="pt-2 text-xs text-muted-foreground">
-              {allowed.size} of {packs.length} enabled
-            </div>
-          </CardContent>
-        </Card>
-
-        {turns.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearTranscript} className="w-full">
-            Clear conversation
-          </Button>
-        )}
+    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_280px] gap-6 h-[calc(100vh-7rem)]">
+      {/* Left sidebar — conversations */}
+      <aside className="min-h-0">
+        <ConversationsSidebar
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={setActiveId}
+          onCreate={createConversation}
+          onRename={renameConversation}
+          onDelete={deleteConversation}
+        />
       </aside>
-
 
       {/* Main column — chat */}
       <section className="flex flex-col min-h-0">
         <ScrollArea className="flex-1 -mx-2 px-2">
           <div ref={transcriptRef} className="space-y-6 pb-4">
-            {turns.length === 0 && <EmptyState allowedCount={allowed.size} />}
+            {turns.length === 0 && <EmptyState />}
             {turns.map((t, i) => (
-              <TurnView key={i} turn={t} isLast={i === turns.length - 1} running={running} />
+              <TurnView
+                key={i}
+                turn={t}
+                isLast={i === turns.length - 1}
+                running={running}
+              />
             ))}
           </div>
         </ScrollArea>
@@ -266,20 +323,24 @@ export function ChatPage() {
                 }
               }}
               placeholder={
-                allowed.size === 0
-                  ? "Enable at least one specialist on the left, then type a message..."
-                  : "Type a message... (⌘/Ctrl+Enter to send)"
+                activeId
+                  ? "Type a message... (⌘/Ctrl+Enter to send)"
+                  : "Loading conversation..."
               }
               rows={3}
-              disabled={running}
+              disabled={running || !activeId}
               className="resize-none flex-1"
             />
             <Button
               onClick={send}
-              disabled={running || !input.trim() || allowed.size === 0}
+              disabled={running || !input.trim() || !activeId}
               size="lg"
             >
-              {running ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              {running ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
             </Button>
           </div>
         </div>
@@ -298,15 +359,55 @@ export function ChatPage() {
   );
 }
 
-function EmptyState({ allowedCount }: { allowedCount: number }) {
+/** Project a server-side conversation into the per-turn view-model. The
+ *  server stores plain (user, assistant) pairs without event history, so
+ *  loaded turns have empty `events` and `finished=true`. New turns added
+ *  during this page session keep their live event stream. */
+function messagesToTurns(d: ConversationDetail): Turn[] {
+  const turns: Turn[] = [];
+  let pendingUser: string | null = null;
+  for (const m of d.messages) {
+    if (m.role === "user") {
+      if (pendingUser !== null) {
+        // Two user messages in a row (shouldn't happen but be defensive).
+        turns.push({
+          user_message: pendingUser,
+          run: null,
+          events: [],
+          finished: true,
+        });
+      }
+      pendingUser = m.content;
+    } else if (m.role === "assistant" && pendingUser !== null) {
+      turns.push({
+        user_message: pendingUser,
+        run: null,
+        events: [],
+        finished: true,
+        assistant_text: m.content,
+      });
+      pendingUser = null;
+    }
+  }
+  if (pendingUser !== null) {
+    turns.push({
+      user_message: pendingUser,
+      run: null,
+      events: [],
+      finished: true,
+    });
+  }
+  return turns;
+}
+
+function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center text-center py-20 px-6 max-w-md mx-auto">
       <Sparkles className="size-10 text-muted-foreground/40 mb-4" />
       <h2 className="text-lg font-semibold mb-1">Ask the orchestrator</h2>
       <p className="text-sm text-muted-foreground">
-        Type any request. The orchestrator picks the right specialist from
-        your <span className="font-medium text-foreground">{allowedCount}</span>{" "}
-        enabled pack{allowedCount === 1 ? "" : "s"} and routes the work.
+        Type any request. The orchestrator picks the right specialist or
+        composes one from skills, and routes the work.
       </p>
     </div>
   );
@@ -321,13 +422,16 @@ function TurnView({
   isLast: boolean;
   running: boolean;
 }) {
-  // The final reply is the last top-level model_text (not from a sub-agent).
+  // The displayed reply comes from `assistant_text` if the server already
+  // persisted one (replayed turns), otherwise from the live stream's last
+  // top-level model_text (in-flight turns).
   const finalText = useMemo(() => {
+    if (turn.assistant_text) return turn.assistant_text;
     const topLevel = turn.events.filter(
       (e) => e.type === "model_text" && !e.subagent_of,
     );
     return topLevel[topLevel.length - 1]?.delta ?? "";
-  }, [turn.events]);
+  }, [turn.events, turn.assistant_text]);
 
   // Hide raw model_text from the activity list — the bubble shows the final.
   const interiorEvents = turn.events.filter((e) => e.type !== "model_text");
@@ -342,7 +446,7 @@ function TurnView({
         </div>
       </div>
 
-      {/* Orchestrator activity */}
+      {/* Orchestrator activity (only present for live turns) */}
       {interiorEvents.length > 0 && (
         <details className="group" open>
           <summary className="cursor-pointer text-xs text-muted-foreground inline-flex items-center gap-1 select-none">

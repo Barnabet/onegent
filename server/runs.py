@@ -14,7 +14,7 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set
 
 from orchestrator import supervisor
 
@@ -69,7 +69,9 @@ def start_run(
     user_id: str = "webui",
     loop: Optional[asyncio.AbstractEventLoop] = None,
     allowed_packs: Optional[List[str]] = None,
+    history: Optional[List[dict]] = None,
     files: Optional[List[dict]] = None,
+    on_done: Optional[Callable[["LiveRun"], None]] = None,
 ) -> LiveRun:
     """Spawn a supervisor run on a background thread. Returns the LiveRun handle.
 
@@ -108,6 +110,7 @@ def start_run(
                 run_id=run_id,
                 timeout=300.0,
                 allowed_packs=allowed_packs,
+                history=history,
                 files=files,
             )
             run.final_text = result.final_text
@@ -119,6 +122,11 @@ def start_run(
             run.status = "error"
         finally:
             run.finished = True
+            if on_done is not None:
+                try:
+                    on_done(run)
+                except Exception:
+                    pass
             # Sentinel so SSE subscribers can detach.
             _push_event_to_subscribers(run, {"type": "__end__"})
 

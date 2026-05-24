@@ -100,6 +100,32 @@ export type FileMeta = {
   path: string;
 };
 
+export type ConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+  ts: number;
+  run_id?: string | null;
+};
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+  file_count: number;
+};
+
+export type ConversationDetail = {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  messages: ConversationMessage[];
+  file_ids: string[];
+  files: FileMeta[];
+};
+
 export type EvalAssertion = { kind: string; [k: string]: unknown };
 
 export type EvalCase = {
@@ -178,8 +204,16 @@ export const api = {
   packs: () => getJSON<PackSummary[]>("/api/packs"),
   pack: (name: string) => getJSON<PackDetail>(`/api/packs/${encodeURIComponent(name)}`),
 
-  startRun: (user_message: string, allowed_packs?: string[], files?: FileMeta[]) =>
-    postJSON<RunSummary>("/api/runs", { user_message, allowed_packs, files }),
+  startRun: (
+    user_message: string,
+    conversation_id: string,
+    allowed_packs?: string[],
+  ) =>
+    postJSON<RunSummary>("/api/runs", {
+      user_message,
+      conversation_id,
+      allowed_packs,
+    }),
   runs: () => getJSON<RunSummary[]>("/api/runs"),
   run: (id: string) => getJSON<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   runStreamUrl: (id: string) => `/api/runs/${encodeURIComponent(id)}/stream`,
@@ -197,6 +231,27 @@ export const api = {
   deleteFile: async (file_id: string): Promise<void> => {
     const r = await fetch(`/api/files/${encodeURIComponent(file_id)}`, { method: "DELETE" });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText} on /api/files/${file_id}`);
+  },
+
+  conversations: () => getJSON<ConversationSummary[]>("/api/conversations"),
+  conversation: (id: string) =>
+    getJSON<ConversationDetail>(`/api/conversations/${encodeURIComponent(id)}`),
+  createConversation: (title?: string) =>
+    postJSON<ConversationDetail>("/api/conversations", { title: title ?? null }),
+  renameConversation: async (id: string, title: string): Promise<ConversationDetail> => {
+    const r = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText} on PATCH /api/conversations/${id}`);
+    return r.json();
+  },
+  deleteConversation: async (id: string): Promise<void> => {
+    const r = await fetch(`/api/conversations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText} on /api/conversations/${id}`);
   },
 
   evalCases: () => getJSON<EvalCase[]>("/api/evals/cases"),

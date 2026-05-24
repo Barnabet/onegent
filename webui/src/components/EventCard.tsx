@@ -7,7 +7,6 @@ import {
   Wrench,
   CheckCircle2,
   XCircle,
-  Sparkles,
   AlertCircle,
   CornerDownRight,
 } from "lucide-react";
@@ -24,21 +23,6 @@ export function EventCard({ event }: { event: RunEvent }) {
       via {sub}
     </Badge>
   ) : null;
-
-  if (event.type === "skill_activated") {
-    return (
-      <div
-        className={`flex items-center gap-2 text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30 ${indent}`}
-      >
-        <Sparkles className="size-4" />
-        <span>
-          Skill activated:{" "}
-          <span className="font-medium text-foreground">{event.name}</span>
-        </span>
-        {subBadge}
-      </div>
-    );
-  }
 
   if (event.type === "tool_call") {
     return (

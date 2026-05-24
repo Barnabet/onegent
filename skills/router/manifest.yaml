@@ -4,6 +4,7 @@ owner: team-platform-ai
 
 requires_tools:
   - orchestrator.list_packs
+  - orchestrator.list_skills
   - orchestrator.delegate
 
 classification: public

@@ -26,7 +26,7 @@ behind the **More** dropdown in the header.
 
 | Route       | What it does                                                                       |
 | ----------- | ---------------------------------------------------------------------------------- |
-| `/`         | **Chat** — talk to the orchestrator. Sidebar toggles which specialists it can use. |
+| `/`         | **Chat** — talk to the orchestrator. Left sidebar lists / manages conversations; right sidebar holds the active conversation's files. |
 | `/runs`     | **Runs** — every live + persisted run with full audit drill-down.                 |
 | `/packs`    | **Packs** — catalog with skills, tools, limits, classification.                   |
 | `/skills`   | **Skills** — catalog with SKILL.md body + required tools.                         |
@@ -36,15 +36,21 @@ behind the **More** dropdown in the header.
 ### How the chat works
 
 The user never picks a pack. Every message goes to the **router** pack —
-a meta-agent whose only tools are `orchestrator.list_packs` and
-`orchestrator.delegate`. The router reads the message, decides whether
-it needs a specialist, picks one from the allowed list, and delegates a
-self-contained sub-task. The specialist runs as a nested sub-agent in
-the same worker process; its events are forwarded to the UI tagged with
-`subagent_of: <pack>` and shown indented under the parent `delegate` call.
+a meta-agent whose tools are `orchestrator.list_packs`,
+`orchestrator.list_skills`, and `orchestrator.delegate`. The router
+reads the message, decides whether it needs a specialist, and spawns a
+sub-agent in one of three shapes: a pack, a pack plus extra skills, or
+an ad-hoc combo of skills with no pack. Sub-agent events are forwarded
+to the UI tagged with `subagent_of: <label>` and shown indented under
+the parent `delegate` call.
 
-The sidebar checklist controls `allowed_packs` per request. Unchecked
-packs are invisible to the orchestrator.
+Conversations are server-side and persisted (one JSON per conversation
+under `conversations/`). Each `POST /api/runs` carries a
+`conversation_id`; the server loads the prior `(user, assistant)`
+transcript and passes it as `history` to the worker, then appends the
+new turn on completion. Sub-agents get no history — each delegation is
+self-contained. Files are attached to the conversation, not the run, so
+they persist across turns and across server restarts.
 
 ## How it streams
 
@@ -53,10 +59,9 @@ with an `on_event` callback that pushes into per-subscriber `asyncio.Queue`s
 behind an SSE endpoint. The frontend uses native `EventSource` to subscribe.
 
 ```
-POST /api/runs          { user_message, allowed_packs? } → { run_id }
+POST /api/runs          { user_message, conversation_id, allowed_packs? } → { run_id }
   (escape hatch: pass { pack: "hello", user_message } to skip the router)
-GET  /api/runs/:id/stream  SSE: skill_activated, tool_call, tool_result,
-                               model_text, error, done
+GET  /api/runs/:id/stream  SSE: tool_call, tool_result, model_text, error, done
 GET  /api/runs/:id      Final RunResult (after done)
 ```
 
@@ -82,6 +87,11 @@ Eval jobs work the same way: `POST /api/evals/run` → SSE stream of
 | `/api/evals/run`                  | POST   | Start an eval job                |
 | `/api/evals/jobs/:id/stream`      | GET    | SSE: per-case results            |
 | `/api/evals/results`              | GET    | Past `evals/results/*.jsonl`     |
+| `/api/conversations`              | GET    | List conversations (summary)     |
+| `/api/conversations`              | POST   | Create a conversation            |
+| `/api/conversations/:id`          | GET    | Full conversation + files        |
+| `/api/conversations/:id`          | PATCH  | Rename                           |
+| `/api/conversations/:id`          | DELETE | Delete + remove attached files   |
 
 ## Stack notes
 

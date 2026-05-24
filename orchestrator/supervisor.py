@@ -34,6 +34,7 @@ def run(
     run_id: Optional[str] = None,
     timeout: Optional[float] = None,
     allowed_packs: Optional[List[str]] = None,
+    history: Optional[List[dict]] = None,
     files: Optional[List[dict]] = None,
 ) -> RunResult:
     """Spawn a worker, collect events to completion, return the final reply."""
@@ -47,6 +48,7 @@ def run(
         user_id=user_id,
         user_message=user_message,
         allowed_packs=allowed_packs,
+        history=history,
         files=files,
     )
 

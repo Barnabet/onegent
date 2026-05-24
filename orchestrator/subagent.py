@@ -89,15 +89,20 @@ def run(
     user_message: str,
     ctx: ToolCtx,
     emit: Callable[[dict], None],
+    history: Optional[List[dict]] = None,
 ) -> RunStats:
-    """Run the sub-agent loop to completion. Returns stats; emits events."""
+    """Run the sub-agent loop to completion. Returns stats; emits events.
+
+    `history` is an optional list of prior `{role, content}` messages
+    (user/assistant pairs) to prepend before `user_message`. Used by the
+    server to give the router conversation memory across runs. Sub-agents
+    don't receive history — each delegation is self-contained.
+    """
     system = build_system_prompt(bound, files=ctx.files)
     tools = build_tool_specs(bound)
 
-    for s in bound.skills:
-        emit(worker_proto.skill_activated(s.frontmatter.name))
-
-    messages: List[dict] = [{"role": "user", "content": user_message}]
+    messages: List[dict] = list(history or [])
+    messages.append({"role": "user", "content": user_message})
     stats = RunStats()
     max_calls = bound.pack.limits.max_tool_calls_per_run
 

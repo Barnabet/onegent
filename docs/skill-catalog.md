@@ -17,9 +17,9 @@ Use this skill when the user asks for a connectivity / smoke-test of the agent p
 
 Use this skill whenever the user gives you a `.pdf` path or asks to do anything with a PDF — read it, extract text or tables, look at a page, merge / split / rotate, encrypt or decrypt, fill a form, or OCR a scan. Append this skill on top of whatever pack is running; it composes cleanly with other skills. Do not use this skill for `.docx`, `.pptx`, or `.xlsx` files — there are (or will be) dedicated skills for those.
 
-## `router` &nbsp; <sub>v0.2.0</sub>
+## `router` &nbsp; <sub>v0.3.0</sub>
 
-Use this skill on every router turn. You are the user-facing orchestrator. You may answer trivial questions yourself, and you may use the read-only file-inspection tools (pdf.*, xlsx.read) for small information-gathering on attached files. For any real work — analysis, generation, writing, transformation — you delegate to a specialist pack via orchestrator.delegate and forward the relevant files along.
+Use this skill on every router turn. You are the user-facing orchestrator. You may answer trivial questions yourself, and you may use the read-only file-inspection tools (pdf.*, xlsx.read) for small information-gathering on attached files. For any real work — analysis, generation, writing, transformation — you delegate via orchestrator.delegate (either to a specialist pack, to a pack topped up with extra skills, or to an ad-hoc sub-agent composed from skills) and forward the relevant files along.
 
 ## `skill_creator` &nbsp; <sub>v0.1.0</sub>
 

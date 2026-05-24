@@ -21,7 +21,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from evals import case as case_mod
 from runtime import pack_loader, skill_loader, tool_registry
-from server import eval_jobs, files as files_store, runs
+from server import conversations as conv_store, eval_jobs, files as files_store, runs
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -192,6 +192,12 @@ def get_pack(name: str) -> dict:
 class StartRunBody(BaseModel):
     user_message: str
     user_id: Optional[str] = "webui"
+    # Conversation this run is a turn of. When set, the server loads the
+    # conversation's transcript as `history` for the worker and appends
+    # the user message + the assistant's final reply on completion. The
+    # conversation's attached files are forwarded automatically; `files`
+    # below is then ignored. The chat UI always sets this.
+    conversation_id: Optional[str] = None
     # Specialist packs the orchestrator is allowed to delegate to. The router
     # pack itself is implicit. If omitted, defaults to every non-router pack
     # the server can discover.
@@ -199,9 +205,8 @@ class StartRunBody(BaseModel):
     # Escape hatch for tools/tests: pin the run to a specific pack instead of
     # going through the router. The web UI does not use this.
     pack: Optional[str] = None
-    # File metadata to make available to every agent on this run. The chat
-    # UI builds this from its uploaded-files list. Each entry is a FileMeta
-    # dict (file_id, name, size, mime, path, ...).
+    # File metadata to forward when no conversation_id is provided (evals,
+    # direct API). Ignored when conversation_id is set.
     files: Optional[List[dict]] = None
 
 
@@ -223,6 +228,34 @@ def _run_to_dict(r: "runs.LiveRun") -> dict:
 @app.post("/api/runs")
 async def start_run(body: StartRunBody) -> dict:
     loop = asyncio.get_running_loop()
+
+    # Resolve conversation context (history + files) if a conversation_id is
+    # provided. The chat UI always provides one; evals / direct callers may not.
+    history: Optional[List[dict]] = None
+    files: Optional[List[dict]] = body.files
+    conv_id = body.conversation_id
+    on_done = None
+    if conv_id:
+        c = conv_store.get(conv_id)
+        if c is None:
+            raise HTTPException(404, f"Conversation {conv_id!r} not found")
+        history = conv_store.history_for_llm(conv_id)
+        # Forward every file currently attached to the conversation; the
+        # user-provided `files` field is ignored to keep one source of truth.
+        files = [
+            files_store.to_dict(m)
+            for fid in c.file_ids
+            if (m := files_store.get(fid)) is not None
+        ]
+        # Record the user turn now, the assistant reply on run completion.
+        conv_store.append_message(conv_id, "user", body.user_message)
+
+        def on_done(r: "runs.LiveRun") -> None:
+            if r.status == "done" and r.final_text:
+                conv_store.append_message(
+                    conv_id, "assistant", r.final_text, run_id=r.run_id
+                )
+
     if body.pack:
         # Direct-to-pack escape hatch.
         run = runs.start_run(
@@ -230,7 +263,9 @@ async def start_run(body: StartRunBody) -> dict:
             body.user_message,
             body.user_id or "webui",
             loop=loop,
-            files=body.files,
+            history=history,
+            files=files,
+            on_done=on_done,
         )
     else:
         # Default path: go through the router.
@@ -243,7 +278,9 @@ async def start_run(body: StartRunBody) -> dict:
             body.user_id or "webui",
             loop=loop,
             allowed_packs=allowed,
-            files=body.files,
+            history=history,
+            files=files,
+            on_done=on_done,
         )
     return _run_to_dict(run)
 
@@ -325,6 +362,8 @@ async def upload_file(
     conversation_id: str = Form(...),
     file: UploadFile = File(...),
 ) -> dict:
+    if conv_store.get(conversation_id) is None:
+        raise HTTPException(404, f"Conversation {conversation_id!r} not found")
     data = await file.read()
     meta = files_store.save(
         conversation_id=conversation_id,
@@ -332,6 +371,7 @@ async def upload_file(
         mime=file.content_type or "application/octet-stream",
         data=data,
     )
+    conv_store.attach_file(conversation_id, meta.file_id)
     return files_store.to_dict(meta)
 
 
@@ -342,8 +382,70 @@ def list_files(conversation_id: str) -> List[dict]:
 
 @app.delete("/api/files/{file_id}")
 def delete_file(file_id: str) -> dict:
-    if not files_store.delete(file_id):
+    meta = files_store.get(file_id)
+    if meta is None:
         raise HTTPException(404, f"File {file_id!r} not found")
+    conv_store.detach_file(meta.conversation_id, file_id)
+    files_store.delete(file_id)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Conversations
+# ---------------------------------------------------------------------------
+
+
+class CreateConversationBody(BaseModel):
+    title: Optional[str] = None
+
+
+class RenameConversationBody(BaseModel):
+    title: str
+
+
+@app.get("/api/conversations")
+def list_conversations() -> List[dict]:
+    return [conv_store.summary_dict(c) for c in conv_store.list_all()]
+
+
+@app.post("/api/conversations")
+def create_conversation(body: CreateConversationBody) -> dict:
+    c = conv_store.create(title=body.title)
+    return conv_store.to_dict(c)
+
+
+@app.get("/api/conversations/{conv_id}")
+def get_conversation(conv_id: str) -> dict:
+    c = conv_store.get(conv_id)
+    if c is None:
+        raise HTTPException(404, f"Conversation {conv_id!r} not found")
+    d = conv_store.to_dict(c)
+    # Inline the file metadata so the UI doesn't need a second round-trip.
+    d["files"] = [
+        files_store.to_dict(m)
+        for fid in c.file_ids
+        if (m := files_store.get(fid)) is not None
+    ]
+    return d
+
+
+@app.patch("/api/conversations/{conv_id}")
+def rename_conversation(conv_id: str, body: RenameConversationBody) -> dict:
+    c = conv_store.rename(conv_id, body.title)
+    if c is None:
+        raise HTTPException(404, f"Conversation {conv_id!r} not found")
+    return conv_store.to_dict(c)
+
+
+@app.delete("/api/conversations/{conv_id}")
+def delete_conversation(conv_id: str) -> dict:
+    c = conv_store.get(conv_id)
+    if c is None:
+        raise HTTPException(404, f"Conversation {conv_id!r} not found")
+    # Delete attached files too.
+    for fid in list(c.file_ids):
+        files_store.delete(fid)
+    conv_store.delete(conv_id)
     return {"ok": True}
 
 
