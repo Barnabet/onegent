@@ -7,4 +7,7 @@ audit_logs/
 .DS_Store
 .acode/
 evals/results/*.jsonl
+webui/node_modules/
+webui/dist/
+webui/.vite/
 

@@ -1,0 +1,182 @@
+// Minimal HTTP client for the agents API.
+// All endpoints are proxied via Vite to http://127.0.0.1:8000 during dev.
+
+export type Tool = {
+  name: string;
+  classification: string;
+  owner: string;
+  tags: string[];
+  version: string;
+};
+
+export type ToolDetail = Tool & {
+  card: string;
+  schema: Record<string, unknown>;
+};
+
+export type SkillSummary = {
+  name: string;
+  description: string;
+  version: string;
+};
+
+export type SkillDetail = {
+  name: string;
+  description: string;
+  version: string;
+  body: string;
+  manifest: {
+    name: string;
+    requires_tools: string[];
+    classification: string;
+    owner: string;
+    references?: string[];
+  };
+};
+
+export type PackSummary = {
+  name: string;
+  version: string;
+  owner: string;
+  description: string;
+  skills: string[];
+  classification: string;
+  model: string;
+  error?: string;
+};
+
+export type PackDetail = {
+  name: string;
+  version: string;
+  owner: string;
+  description: string;
+  classification: string;
+  allowed_data_sources: string[];
+  model: string;
+  limits: { max_tool_calls_per_run: number; max_tokens_per_run: number; timeout_seconds: number };
+  skills: { name: string; description: string }[];
+  tools: string[];
+  effective_classification: string;
+};
+
+export type RunSummary = {
+  run_id: string;
+  pack: string;
+  user_message: string;
+  user_id: string;
+  started_at: number;
+  status: "running" | "done" | "error" | "persisted";
+  error: string | null;
+  final_text: string;
+  stats: { turns: number; tool_calls: number; finish_reason: string } | null;
+  events_count: number;
+};
+
+export type RunEvent = {
+  type: string;
+  // Common event fields (loosely typed — different per event type):
+  name?: string;
+  call_id?: string;
+  args?: Record<string, unknown>;
+  payload?: { ok: boolean; data?: unknown; error?: { code: string; message: string } | null; warnings?: string[]; citations?: unknown[] };
+  ok?: boolean;
+  delta?: string;
+  final?: string;
+  message?: string;
+  stats?: Record<string, unknown>;
+};
+
+export type RunDetail = RunSummary & { events: RunEvent[] };
+
+export type EvalAssertion = { kind: string; [k: string]: unknown };
+
+export type EvalCase = {
+  id: string;
+  pack: string;
+  description: string;
+  user_message: string;
+  timeout: number;
+  assertions: EvalAssertion[];
+  source_path: string | null;
+};
+
+export type AssertionResult = {
+  kind: string;
+  passed: boolean;
+  detail: string;
+  score: number | null;
+  rationale: string | null;
+};
+
+export type CaseResult = {
+  case_id: string;
+  pack: string;
+  run_id: string;
+  passed: boolean;
+  duration_s: number;
+  final_text: string;
+  assertion_results: AssertionResult[];
+  error: string | null;
+  stats: Record<string, unknown> | null;
+};
+
+export type EvalJob = {
+  job_id: string;
+  pack: string | null;
+  case: string | null;
+  use_judge: boolean;
+  started_at: number;
+  status: "running" | "done" | "error";
+  error: string | null;
+  case_results: CaseResult[];
+};
+
+export type EvalResultsFile = {
+  file: string;
+  total: number;
+  passed: number;
+  cases: CaseResult[];
+};
+
+async function getJSON<T>(path: string): Promise<T> {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} on ${path}`);
+  return r.json() as Promise<T>;
+}
+
+async function postJSON<T>(path: string, body: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} on ${path}`);
+  return r.json() as Promise<T>;
+}
+
+export const api = {
+  health: () => getJSON<{ ok: boolean; tools: number }>("/api/health"),
+
+  tools: () => getJSON<Tool[]>("/api/tools"),
+  tool: (name: string) => getJSON<ToolDetail>(`/api/tools/${encodeURIComponent(name)}`),
+
+  skills: () => getJSON<SkillSummary[]>("/api/skills"),
+  skill: (name: string) => getJSON<SkillDetail>(`/api/skills/${encodeURIComponent(name)}`),
+
+  packs: () => getJSON<PackSummary[]>("/api/packs"),
+  pack: (name: string) => getJSON<PackDetail>(`/api/packs/${encodeURIComponent(name)}`),
+
+  startRun: (pack: string, user_message: string) =>
+    postJSON<RunSummary>("/api/runs", { pack, user_message }),
+  runs: () => getJSON<RunSummary[]>("/api/runs"),
+  run: (id: string) => getJSON<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
+  runStreamUrl: (id: string) => `/api/runs/${encodeURIComponent(id)}/stream`,
+
+  evalCases: () => getJSON<EvalCase[]>("/api/evals/cases"),
+  startEval: (pack: string | null, caseId: string | null, useJudge: boolean) =>
+    postJSON<EvalJob>("/api/evals/run", { pack, case: caseId, use_judge: useJudge }),
+  evalJobs: () => getJSON<EvalJob[]>("/api/evals/jobs"),
+  evalJob: (id: string) => getJSON<EvalJob>(`/api/evals/jobs/${encodeURIComponent(id)}`),
+  evalJobStreamUrl: (id: string) => `/api/evals/jobs/${encodeURIComponent(id)}/stream`,
+  evalResults: () => getJSON<EvalResultsFile[]>("/api/evals/results"),
+};

@@ -4,28 +4,29 @@ A Skills × Tools library for building Gen AI agents at the bank.
 
 ## Status
 
-**PR #3 — reuse-proof + bootstrap landed.** Three packs, four skills, four
-tool domains, all end-to-end verified against local CLIProxyAPI.
+**PR #5 — server + webui landed.** Three packs, four skills, four tool
+domains, eval harness, FastAPI backend, and a React/shadcn web UI for
+running and inspecting agents interactively.
 
 ```
 pip install -r requirements.txt
-python -m pytest                                  # 28 passed, 3 skipped (templates)
+python -m pytest                                  # 42 passed, 3 skipped (templates)
 
-# Smoke test
+# CLI — one-shot run
 python scripts/run.py --pack hello "ping"
 
-# Credit pilot — demonstrates tool reuse across xlsx_analysis + credit_memo
-python scripts/run.py --pack credit_analyst \
-  "Draft a credit memo for Acme Italia SpA. Financials: /tmp/acme_financials.xlsx"
+# CLI — eval harness
+python scripts/eval.py [--pack X] [--case Y] [--no-judge]
 
-# Bootstrap — the agent helps you write new skills/tools/packs
-python scripts/run.py --pack skill_creator \
-  "I want to create a new skill called pep_screen for PEP screening..."
-
-python scripts/check_catalog.py --write           # regenerate docs/{tool,skill}-catalog.md
+# Web UI (two terminals)
+python scripts/serve.py                           # FastAPI on :8000
+cd webui && npm install && npm run dev            # Vite on :5173 (proxies /api to :8000)
 ```
 
-### What ships in PR #3
+Open <http://localhost:5173> for the chat UI, run history, catalogs, and
+eval dashboard.
+
+### What ships (capabilities)
 
 | Domain | Tools |
 |---|---|
@@ -71,8 +72,11 @@ cib-agents/
 ├── fixtures/            # docstore mock data for the pilots
 ├── orchestrator/        # supervisor.py + worker_entry.py + subagent.py
 ├── runtime/             # tool_registry, skill_loader, pack_loader, llm, audit, catalog_gen
-├── scripts/             # run.py, check_catalog.py (scaffolding done via skill_creator)
-└── tests/               # unit + spine end-to-end
+├── evals/               # YAML cases, scoring engine, LLM-judge, runner, reports
+├── server/              # FastAPI app (HTTP + SSE) in front of the supervisor + evals
+├── webui/               # Vite + React + shadcn UI (chat, runs, catalogs, evals)
+├── scripts/             # run.py, eval.py, serve.py, check_catalog.py
+└── tests/               # unit + spine end-to-end + eval harness
 ```
 
 ## The two rules that make it compound
