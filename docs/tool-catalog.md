@@ -3,7 +3,7 @@
 Generated from the live tool registry. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**11 tools** across **5 domains**.
+**13 tools** across **6 domains**.
 
 ## By domain
 
@@ -128,6 +128,126 @@ Call: `docstore.fetch(query="acme-credit-input")`
 ## See also
 - `repo.read_doc` — for repository docs, not internal documents.
 - `xlsx.read` — when the user has attached an .xlsx file directly.
+
+</details>
+
+### `orchestrator`
+
+#### `orchestrator.delegate` &nbsp; <sub>v1 · public · owner: team-platform-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: orchestrator.delegate
+version: 1
+owner: team-platform-ai
+classification: [public]
+tags: [routing, meta]
+---
+
+# orchestrator.delegate
+
+## Purpose
+Hand off a self-contained sub-task to a specialist pack. The specialist
+runs in a fresh sub-agent loop with its own skills and tools, then
+returns its final text reply and a summary of what it did.
+
+## When to use
+- The user's request maps to a single specialist pack from
+  `orchestrator.list_packs`. Pick the best one and delegate.
+- The user's request needs multiple specialists. Delegate to each one in
+  turn with the relevant sub-task; combine their answers yourself.
+
+## When NOT to use
+- For pure conversational replies ("hi", "what can you do?") — answer
+  yourself. Do not delegate trivia.
+- To call a pack that is not in the allowed list — the call will fail
+  with `pack_not_allowed`.
+- To pass the user's raw message verbatim when it contains context the
+  specialist does not need. Rewrite the sub-task to be self-contained.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| pack | string | yes | The pack name to delegate to. Must be in `allowed_packs`. |
+| message | string | yes | A self-contained sub-task for the specialist. Include all context it needs — it cannot see the parent conversation. |
+
+## Returns
+On success: `{ok: true, data: {pack, final_text, stats: {turns, tool_calls, finish_reason}}}`
+
+`final_text` is the specialist's last reply. Quote it or summarise it for
+the user. The full event stream from the sub-agent is also forwarded
+into the parent run's audit log automatically — you do not need to
+re-emit it.
+
+## Errors
+- `pack_not_allowed` — `pack` is not in the router's `allowed_packs`.
+- `pack_not_found` — `pack` does not exist.
+- `subagent_failed` — the specialist raised; `error.message` has detail.
+
+## Examples
+### Routing a credit memo request
+Call: `orchestrator.delegate(pack="credit_analyst", message="Draft a credit memo for Acme SpA. Financials: /tmp/acme.xlsx")`
+Returns: `{ok: true, data: {pack: "credit_analyst", final_text: "Memo drafted...", stats: {turns: 4, tool_calls: 3, finish_reason: "stop"}}}`
+
+### Smoke-test
+Call: `orchestrator.delegate(pack="hello", message="ping")`
+Returns: `{ok: true, data: {pack: "hello", final_text: "Platform is alive...", stats: {...}}}`
+
+## See also
+- `orchestrator.list_packs` — see which packs are available first.
+
+</details>
+
+#### `orchestrator.list_packs` &nbsp; <sub>v1 · public · owner: team-platform-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: orchestrator.list_packs
+version: 1
+owner: team-platform-ai
+classification: [public]
+tags: [routing, meta]
+---
+
+# orchestrator.list_packs
+
+## Purpose
+List the specialist packs the router is allowed to delegate to. Returns
+each pack's name + one-line description so the model can pick the right
+one for a user request.
+
+## When to use
+- At the start of a router run, to see what specialists are available.
+- When the user asks a new question and you need to decide which
+  specialist (if any) should handle it.
+
+## When NOT to use
+- If you have already called this in the current turn — the list does not
+  change mid-run. Cache the answer.
+- For pure conversational replies that do not need a specialist.
+
+## Parameters
+(none)
+
+## Returns
+On success: `{ok: true, data: {packs: [{name, description, classification}, ...]}}`
+
+## Errors
+- `no_router_context` — this tool was called outside a router run
+  (no `allowed_packs` configured). Should not happen in practice.
+
+## Examples
+### Discovering specialists
+Call: `orchestrator.list_packs()`
+Returns: `{ok: true, data: {packs: [
+  {name: "credit_analyst", description: "Pilot pack for credit analysts...", classification: "confidential"},
+  {name: "hello", description: "Smoke-test pack...", classification: "public"}
+]}}`
+
+## See also
+- `orchestrator.delegate` — actually invoke a specialist with a sub-task.
 
 </details>
 
@@ -736,11 +856,13 @@ Call: `xlsx.read(path="/data/loans.csv")`
 - **extract** — `text.extract_lines`
 - **fetch** — `docstore.fetch`
 - **internal-docs** — `docstore.fetch`
+- **meta** — `orchestrator.delegate`, `orchestrator.list_packs`
 - **metrics** — `text.word_count`
 - **numeric** — `text.extract_lines`
 - **pack-authoring** — `repo.scaffold_pack`
 - **read** — `docstore.fetch`, `repo.read_catalog`, `repo.read_doc`, `xlsx.read`
 - **reference** — `repo.read_catalog`, `repo.read_doc`
+- **routing** — `orchestrator.delegate`, `orchestrator.list_packs`
 - **scaffold** — `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
 - **search** — `repo.search_catalog`
 - **skill-authoring** — `repo.scaffold_skill`

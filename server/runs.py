@@ -68,6 +68,7 @@ def start_run(
     user_message: str,
     user_id: str = "webui",
     loop: Optional[asyncio.AbstractEventLoop] = None,
+    allowed_packs: Optional[List[str]] = None,
 ) -> LiveRun:
     """Spawn a supervisor run on a background thread. Returns the LiveRun handle.
 
@@ -105,6 +106,7 @@ def start_run(
                 on_event=on_event,
                 run_id=run_id,
                 timeout=300.0,
+                allowed_packs=allowed_packs,
             )
             run.final_text = result.final_text
             run.stats = result.stats

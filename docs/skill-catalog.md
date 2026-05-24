@@ -3,7 +3,7 @@
 Generated from skills/*/SKILL.md frontmatter. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**4 skills.**
+**5 skills.**
 
 ## `credit_memo` &nbsp; <sub>v0.1.0</sub>
 
@@ -12,6 +12,10 @@ Use this skill when the user asks you to draft, prepare, or assemble a credit me
 ## `hello` &nbsp; <sub>v0.1.0</sub>
 
 Use this skill when the user asks for a connectivity / smoke-test of the agent platform — typically phrases like "say hi", "ping", "smoke test", "are you alive". The skill calls a no-op echo tool to prove the tool plumbing works end-to-end, then reports success.
+
+## `router` &nbsp; <sub>v0.1.0</sub>
+
+Use this skill on every router turn. You are the user-facing orchestrator. You answer trivial questions yourself, and for any real work you delegate to a specialist pack via orchestrator.delegate. You never call the specialists' tools directly — only orchestrator.list_packs and orchestrator.delegate.
 
 ## `skill_creator` &nbsp; <sub>v0.1.0</sub>
 

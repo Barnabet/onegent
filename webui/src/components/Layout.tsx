@@ -1,44 +1,87 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown, MessageSquare } from "lucide-react";
+import { Link } from "react-router-dom";
 
-const NAV = [
-  { to: "/", label: "Chat" },
-  { to: "/runs", label: "Runs" },
-  { to: "/packs", label: "Packs" },
-  { to: "/skills", label: "Skills" },
-  { to: "/tools", label: "Tools" },
-  { to: "/evals", label: "Evals" },
+const SECONDARY = [
+  { to: "/runs", label: "Runs", hint: "all live + persisted runs" },
+  { to: "/packs", label: "Packs", hint: "specialist agent bundles" },
+  { to: "/skills", label: "Skills", hint: "SKILL.md playbooks" },
+  { to: "/tools", label: "Tools", hint: "deterministic capabilities" },
+  { to: "/evals", label: "Evals", hint: "YAML cases + judge" },
 ];
 
 export function Layout() {
+  const location = useLocation();
+  const currentSecondary = SECONDARY.find((n) => location.pathname.startsWith(n.to));
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <header className="border-b">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
+          <Link to="/" className="flex items-center gap-2 shrink-0">
             <div className="size-6 rounded bg-primary" />
             <span className="font-semibold tracking-tight">CIB Agents</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">
-              skills × tools
+              orchestrator
             </span>
-          </div>
+          </Link>
+
           <nav className="flex items-center gap-1">
-            {NAV.map((n) => (
-              <NavLink
-                key={n.to}
-                to={n.to}
-                end={n.to === "/"}
-                className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-md text-sm transition-colors ${
-                    isActive
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  isActive
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                }`
+              }
+            >
+              <MessageSquare className="size-3.5" />
+              Chat
+            </NavLink>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={
+                    currentSecondary
                       ? "bg-accent text-accent-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                  }`
-                }
-              >
-                {n.label}
-              </NavLink>
-            ))}
+                      : "text-muted-foreground"
+                  }
+                >
+                  {currentSecondary ? currentSecondary.label : "More"}
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  Catalog & history
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {SECONDARY.map((n) => (
+                  <DropdownMenuItem key={n.to} asChild>
+                    <Link to={n.to} className="flex flex-col items-start gap-0.5">
+                      <span className="font-medium">{n.label}</span>
+                      <span className="text-xs text-muted-foreground">{n.hint}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </nav>
         </div>
       </header>

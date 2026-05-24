@@ -1,0 +1,12 @@
+name: router
+version: 0.1.0
+owner: team-platform-ai
+
+requires_tools:
+  - orchestrator.list_packs
+  - orchestrator.delegate
+
+classification: public
+
+data_sources: []
+permissions: []

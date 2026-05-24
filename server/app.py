@@ -133,6 +133,11 @@ def _list_pack_names() -> List[str]:
     return sorted(p.stem for p in root.glob("*.yaml"))
 
 
+def _default_allowed_packs() -> List[str]:
+    """All packs except the router itself, used when the client doesn't pick."""
+    return [n for n in _list_pack_names() if n != "router"]
+
+
 @app.get("/api/packs")
 def list_packs() -> List[dict]:
     out = []
@@ -185,9 +190,15 @@ def get_pack(name: str) -> dict:
 
 
 class StartRunBody(BaseModel):
-    pack: str
     user_message: str
     user_id: Optional[str] = "webui"
+    # Specialist packs the orchestrator is allowed to delegate to. The router
+    # pack itself is implicit. If omitted, defaults to every non-router pack
+    # the server can discover.
+    allowed_packs: Optional[List[str]] = None
+    # Escape hatch for tools/tests: pin the run to a specific pack instead of
+    # going through the router. The web UI does not use this.
+    pack: Optional[str] = None
 
 
 def _run_to_dict(r: "runs.LiveRun") -> dict:
@@ -208,7 +219,26 @@ def _run_to_dict(r: "runs.LiveRun") -> dict:
 @app.post("/api/runs")
 async def start_run(body: StartRunBody) -> dict:
     loop = asyncio.get_running_loop()
-    run = runs.start_run(body.pack, body.user_message, body.user_id or "webui", loop=loop)
+    if body.pack:
+        # Direct-to-pack escape hatch.
+        run = runs.start_run(
+            body.pack,
+            body.user_message,
+            body.user_id or "webui",
+            loop=loop,
+        )
+    else:
+        # Default path: go through the router.
+        allowed = body.allowed_packs
+        if allowed is None:
+            allowed = _default_allowed_packs()
+        run = runs.start_run(
+            "router",
+            body.user_message,
+            body.user_id or "webui",
+            loop=loop,
+            allowed_packs=allowed,
+        )
     return _run_to_dict(run)
 
 

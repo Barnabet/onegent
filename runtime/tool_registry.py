@@ -62,6 +62,10 @@ class ToolCtx:
     # The audit logger is attached by the worker; tools may emit structured
     # events via ctx.audit(event_type, **fields).
     audit: Optional[Callable[..., None]] = None
+    # Orchestrator-only fields. Populated by the worker when the running pack
+    # is a router; ignored otherwise. The subagent.run tool reads them.
+    allowed_packs: Optional[List[str]] = None
+    emit: Optional[Callable[[dict], None]] = None
 
 
 # ---------------------------------------------------------------------------

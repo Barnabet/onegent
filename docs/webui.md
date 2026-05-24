@@ -21,14 +21,30 @@ Open <http://localhost:5173>.
 
 ## Pages
 
-| Route       | What it does                                                              |
-| ----------- | ------------------------------------------------------------------------- |
-| `/`         | **Chat** — pick a pack, send a message, watch tool calls stream in live. |
-| `/runs`     | **Runs** — every live + persisted run with full audit drill-down.        |
-| `/packs`    | **Packs** — catalog with skills, tools, limits, classification.          |
-| `/skills`   | **Skills** — catalog with SKILL.md body + required tools.                |
-| `/tools`    | **Tools** — catalog with tool card + JSON schema, filterable by tag.     |
-| `/evals`    | **Evals** — case browser, runner with live streaming, results history.   |
+The chat is the primary view. Everything else is a catalog or audit page
+behind the **More** dropdown in the header.
+
+| Route       | What it does                                                                       |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `/`         | **Chat** — talk to the orchestrator. Sidebar toggles which specialists it can use. |
+| `/runs`     | **Runs** — every live + persisted run with full audit drill-down.                 |
+| `/packs`    | **Packs** — catalog with skills, tools, limits, classification.                   |
+| `/skills`   | **Skills** — catalog with SKILL.md body + required tools.                         |
+| `/tools`    | **Tools** — catalog with tool card + JSON schema, filterable by tag.              |
+| `/evals`    | **Evals** — case browser, runner with live streaming, results history.            |
+
+### How the chat works
+
+The user never picks a pack. Every message goes to the **router** pack —
+a meta-agent whose only tools are `orchestrator.list_packs` and
+`orchestrator.delegate`. The router reads the message, decides whether
+it needs a specialist, picks one from the allowed list, and delegates a
+self-contained sub-task. The specialist runs as a nested sub-agent in
+the same worker process; its events are forwarded to the UI tagged with
+`subagent_of: <pack>` and shown indented under the parent `delegate` call.
+
+The sidebar checklist controls `allowed_packs` per request. Unchecked
+packs are invisible to the orchestrator.
 
 ## How it streams
 
@@ -37,7 +53,8 @@ with an `on_event` callback that pushes into per-subscriber `asyncio.Queue`s
 behind an SSE endpoint. The frontend uses native `EventSource` to subscribe.
 
 ```
-POST /api/runs          { pack, user_message } → { run_id }
+POST /api/runs          { user_message, allowed_packs? } → { run_id }
+  (escape hatch: pass { pack: "hello", user_message } to skip the router)
 GET  /api/runs/:id/stream  SSE: skill_activated, tool_call, tool_result,
                                model_text, error, done
 GET  /api/runs/:id      Final RunResult (after done)

@@ -84,6 +84,8 @@ export type RunEvent = {
   final?: string;
   message?: string;
   stats?: Record<string, unknown>;
+  // Set by orchestrator.delegate to mark events that came from a sub-agent.
+  subagent_of?: string;
 };
 
 export type RunDetail = RunSummary & { events: RunEvent[] };
@@ -166,8 +168,8 @@ export const api = {
   packs: () => getJSON<PackSummary[]>("/api/packs"),
   pack: (name: string) => getJSON<PackDetail>(`/api/packs/${encodeURIComponent(name)}`),
 
-  startRun: (pack: string, user_message: string) =>
-    postJSON<RunSummary>("/api/runs", { pack, user_message }),
+  startRun: (user_message: string, allowed_packs?: string[]) =>
+    postJSON<RunSummary>("/api/runs", { user_message, allowed_packs }),
   runs: () => getJSON<RunSummary[]>("/api/runs"),
   run: (id: string) => getJSON<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   runStreamUrl: (id: string) => `/api/runs/${encodeURIComponent(id)}/stream`,

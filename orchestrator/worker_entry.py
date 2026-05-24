@@ -10,7 +10,7 @@ from __future__ import annotations
 import traceback
 from dataclasses import dataclass
 from multiprocessing.connection import Connection
-from typing import Optional
+from typing import List, Optional
 
 from runtime import tool_registry, worker_proto
 from runtime.audit import AuditLogger
@@ -25,6 +25,10 @@ class WorkerJob:
     pack_name: str
     user_id: str
     user_message: str
+    # When the pack is a router, this is the list of specialist packs it is
+    # allowed to delegate to via orchestrator.delegate. None for regular
+    # (non-routing) runs.
+    allowed_packs: Optional[List[str]] = None
 
 
 def worker_main(conn: Connection, job: WorkerJob) -> None:
@@ -59,6 +63,11 @@ def _run(conn: Connection, job: WorkerJob) -> None:
         effective_classification=bound.effective_classification,
     )
 
+    def emit(event: dict) -> None:
+        # Audit every emitted event in addition to forwarding it.
+        audit(event["type"], **{k: v for k, v in event.items() if k != "type"})
+        conn.send(event)
+
     ctx = ToolCtx(
         run_id=job.run_id,
         user_id=job.user_id,
@@ -66,12 +75,9 @@ def _run(conn: Connection, job: WorkerJob) -> None:
         classification_ceiling=pack.classification,
         allowed_data_sources=pack.allowed_data_sources,
         audit=audit,
+        allowed_packs=job.allowed_packs,
+        emit=emit,
     )
-
-    def emit(event: dict) -> None:
-        # Audit every emitted event in addition to forwarding it.
-        audit(event["type"], **{k: v for k, v in event.items() if k != "type"})
-        conn.send(event)
 
     try:
         stats = subagent.run(bound, job.user_message, ctx, emit)
