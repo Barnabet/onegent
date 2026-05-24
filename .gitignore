@@ -6,3 +6,5 @@ __pycache__/
 audit_logs/
 .DS_Store
 .acode/
+evals/results/*.jsonl
+

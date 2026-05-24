@@ -1,0 +1,21 @@
+id: hello_echo_smoke
+pack: hello
+description: >
+  Baseline smoke test. The hello skill should invoke core.echo and surface
+  the echoed token in its reply.
+
+user_message: "Please echo the word 'hippopotamus' back to me."
+timeout: 60
+
+assertions:
+  - kind: no_error
+  - kind: tool_called
+    name: core.echo
+  - kind: contains
+    text: hippopotamus
+    case_sensitive: false
+  - kind: judge
+    threshold: 4
+    criterion: >
+      The reply confirms the echo tool ran and includes the word
+      "hippopotamus" verbatim in the response.

@@ -1,0 +1,26 @@
+id: skill_creator_dedup_check
+pack: skill_creator
+description: >
+  Anti-duplication discipline. When asked about an existing capability, the
+  skill_creator skill should consult the catalog instead of scaffolding a
+  new tool.
+
+user_message: >
+  I want to add a tool that reads .xlsx files and returns their rows. Does
+  one already exist? Please check the catalog before suggesting we build it.
+timeout: 180
+
+assertions:
+  - kind: no_error
+  - kind: tool_called
+    name: repo.search_catalog
+  - kind: tool_not_called
+    name: repo.scaffold_tool
+  - kind: contains
+    text: "xlsx"
+    case_sensitive: false
+  - kind: judge
+    threshold: 4
+    criterion: >
+      The reply identifies that xlsx.read already exists, points the user at
+      it, and does NOT propose scaffolding a new tool.

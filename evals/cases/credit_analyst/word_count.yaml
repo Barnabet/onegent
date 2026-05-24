@@ -1,0 +1,25 @@
+id: credit_word_count_doc
+pack: credit_analyst
+description: >
+  Counting words in the seeded ACME credit memo input — exercises
+  docstore.fetch + text.word_count via the credit_memo skill.
+
+user_message: >
+  Use the docstore document "acme-credit-memo-input" and tell me roughly how
+  many words it contains. Just give me the number and a short summary.
+timeout: 180
+
+assertions:
+  - kind: no_error
+  - kind: tool_called
+    name: docstore.fetch
+  - kind: tool_called
+    name: text.word_count
+  - kind: regex
+    pattern: "\\b\\d{2,}\\b"   # the reply should quote a numeric count
+  - kind: judge
+    threshold: 4
+    criterion: >
+      The reply states a concrete word count (a number) for the ACME credit
+      memo input document and gives a brief sentence of context. It must not
+      hallucinate document content the tools did not return.
