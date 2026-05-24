@@ -1,0 +1,19 @@
+ACME ITALIA SPA — CREDIT FILE INPUT
+
+Borrower: Acme Italia SpA
+Facility requested: EUR 75m, 5-year amortising term loan, EURIBOR + 250bps.
+Purpose: Refinance EUR 60m existing 2021 facility (matures 2026-03), fund EUR 15m capex.
+
+Financial highlights (FY2024, audited):
+- Revenue: EUR 412m (+8.2% YoY)
+- EBITDA: EUR 58m (margin 14.1%)
+- Net debt: EUR 142m (Net debt / EBITDA: 2.45x)
+- Free cash flow: EUR 31m
+- Interest coverage: 5.8x
+
+Industry: Specialty chemicals.
+Headquartered: Milan, Italy.
+Rating (internal, last review 2025-02): BBB-.
+Existing relationship: 11 years, no covenant breaches.
+
+Risks: input-cost volatility (energy and feedstocks); customer concentration (top 3 = 38% of revenue).

@@ -1,0 +1,17 @@
+name: skill_creator
+version: 0.1.0
+owner: team-platform-ai
+
+requires_tools:
+  - repo.read_doc
+  - repo.read_catalog
+  - repo.search_catalog
+  - repo.scaffold_tool
+  - repo.scaffold_skill
+  - repo.scaffold_pack
+
+classification: internal
+data_sources: []
+permissions:
+  - fs.read
+  - fs.write

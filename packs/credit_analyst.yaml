@@ -1,0 +1,29 @@
+name: credit_analyst
+version: 0.1.0
+owner: team-credit-ai
+
+description: >
+  Pilot pack for credit analysts. Reuses the same tools (xlsx.read,
+  text.extract_lines, text.word_count) across the spreadsheet analysis and
+  credit memo skills. Demonstrates the tool-reuse discipline end-to-end.
+
+skills:
+  - xlsx_analysis
+  - credit_memo
+
+classification: confidential
+allowed_data_sources:
+  - internal_docs
+  - user_attachments
+
+model: claude-sonnet-4-6
+
+limits:
+  max_tool_calls_per_run: 30
+  max_tokens_per_run: 150000
+  timeout_seconds: 240
+
+risk_review:
+  reviewed_by: pilot-stub
+  reviewed_at: 2026-05-24
+  ticket: PILOT-0001

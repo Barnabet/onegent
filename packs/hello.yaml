@@ -1,0 +1,20 @@
+name: hello
+version: 0.1.0
+owner: team-platform-ai
+
+description: >
+  Smoke-test pack. Single skill that calls a no-op echo tool to prove the
+  agent + tool plumbing is alive end-to-end.
+
+skills:
+  - hello
+
+classification: public
+allowed_data_sources: []
+
+model: claude-sonnet-4-6
+
+limits:
+  max_tool_calls_per_run: 5
+  max_tokens_per_run: 10000
+  timeout_seconds: 60

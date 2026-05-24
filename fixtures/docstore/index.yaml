@@ -1,0 +1,13 @@
+# Mock docstore index. Each entry maps an id to a file under fixtures/docstore/.
+# Real backend later; this is enough to demo the workflow end-to-end.
+docs:
+  - id: "globex-kyc-2025"
+    doc_type: "kyc_dossier"
+    entity: "Globex Corporation SA"
+    file: "globex-kyc-2025.txt"
+    published: "2025-08-12"
+  - id: "acme-credit-input"
+    doc_type: "credit_input"
+    entity: "Acme Italia SpA"
+    file: "acme-credit-memo-input.txt"
+    published: "2025-03-01"

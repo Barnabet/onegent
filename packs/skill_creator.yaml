@@ -1,0 +1,21 @@
+name: skill_creator
+version: 0.1.0
+owner: team-platform-ai
+
+description: >
+  Bootstrap pack. Single skill that walks a user through creating a new
+  tool, skill, or pack — consulting the live authoring docs and catalog,
+  enforcing dedup checks, and scaffolding the files.
+
+skills:
+  - skill_creator
+
+classification: internal
+allowed_data_sources: []
+
+model: claude-sonnet-4-6
+
+limits:
+  max_tool_calls_per_run: 30
+  max_tokens_per_run: 200000
+  timeout_seconds: 300

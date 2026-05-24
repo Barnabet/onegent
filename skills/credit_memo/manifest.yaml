@@ -1,0 +1,16 @@
+name: credit_memo
+version: 0.1.0
+owner: team-credit-ai
+
+requires_tools:
+  - docstore.fetch
+  - xlsx.read
+  - text.extract_lines
+  - text.word_count
+
+classification: confidential
+data_sources:
+  - internal_docs
+  - user_attachments
+permissions:
+  - fs.read

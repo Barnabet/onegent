@@ -1,0 +1,20 @@
+name: <skill_name>
+version: 0.1.0
+owner: team-replace-me
+
+# Every tool the skill ever calls. No wildcards. The framework validates each
+# name exists in the registry and that its classification is <= this skill's.
+requires_tools:
+  - domain.tool_one
+  - other.tool_two
+
+# public | internal | confidential | restricted
+classification: internal
+
+# Coarse-grained data source allow-list, surfaced in audit reports.
+data_sources:
+  - internal_docs
+
+# Capability flags for audit; tools enforce their own runtime access.
+permissions:
+  - fs.read

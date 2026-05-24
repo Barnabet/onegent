@@ -1,0 +1,34 @@
+name: <pack_name>
+version: 0.1.0
+owner: team-replace-me
+
+description: >
+  One paragraph describing the persona this pack serves and the class of
+  tasks it covers.
+
+# Skills loaded into the sub-agent. The union of their requires_tools becomes
+# the bound tool set. Do NOT list tools here.
+skills:
+  - <skill_one>
+  - <skill_two>
+
+# The framework refuses to load the pack if the transitive max classification
+# of skills/tools exceeds this ceiling.
+classification: internal
+
+allowed_data_sources:
+  - internal_docs
+
+# Pinned model id. Bumping it is a pack version bump and triggers eval re-run.
+model: claude-sonnet-4-6
+
+limits:
+  max_tool_calls_per_run: 40
+  max_tokens_per_run: 200000
+  timeout_seconds: 300
+
+# Required when classification is `confidential` or above.
+# risk_review:
+#   reviewed_by: risk-ai-committee
+#   reviewed_at: 2026-05-15
+#   ticket: RISK-XXXX

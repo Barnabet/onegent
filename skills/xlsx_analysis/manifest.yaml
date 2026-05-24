@@ -1,0 +1,13 @@
+name: xlsx_analysis
+version: 0.1.0
+owner: team-doc-ai
+
+requires_tools:
+  - xlsx.read
+  - text.word_count
+
+classification: internal
+data_sources:
+  - user_attachments
+permissions:
+  - fs.read
