@@ -1,6 +1,6 @@
 ---
 tool: xlsx.read
-version: 1
+version: 2
 owner: team-doc-ai
 classification: [internal]
 tags: [spreadsheet, read, tabular]
@@ -10,57 +10,72 @@ tags: [spreadsheet, read, tabular]
 
 ## Purpose
 Read a spreadsheet file (`.xlsx`, `.xlsm`, `.csv`, or `.tsv`) and return its
-contents as a header row + list of data rows.
+contents as a header row + list of data rows, optionally for every sheet in
+a workbook at once.
 
 ## When to use
-- The user gives you a path to a spreadsheet and asks you to inspect, analyse,
-  or summarise its contents.
-- A skill needs the rows from a workbook before doing any analysis on them.
+- The user gives you a path to a spreadsheet and wants you to look at the
+  actual rows (for a sample, a small dump, or a copy into your reasoning).
+- A skill needs the raw cells of a workbook before deciding what to do next.
+- The user wants every sheet of a multi-sheet workbook in one call —
+  pass `all_sheets=true`.
 
 ## When NOT to use
-- For writing or modifying a workbook — not supported yet; will be `xlsx.write_*`.
-- For complex pivot / chart inspection — not supported; returns raw cell values.
-- For reading PDFs of spreadsheet exports — use `pdf.extract_tables` (when
-  available).
+- To *compute* anything (sum, average, group-by, join, filter): call
+  `xlsx.sql` instead. Pulling all rows into your context just to sum them is
+  wasteful and error-prone.
+- To learn shape / sheet names / column previews without the data: call
+  `xlsx.info` — much cheaper for large files.
+- To modify a workbook: use `xlsx.write`, `xlsx.edit_cells`, `xlsx.format`.
+- To read a PDF table: use `pdf.extract_tables`.
 
 ## Parameters
 | name | type | required | description |
 |---|---|---|---|
-| path | string | yes | Absolute or relative path to the file. |
-| sheet | string | no | Sheet name (xlsx only). Defaults to the first sheet. |
+| path | string | yes | Path to the file. |
+| sheet | string | no | Sheet name (xlsx only). Defaults to the first sheet. Ignored when `all_sheets=true`. |
 | has_header | bool | no | If true (default), the first row becomes `headers`; otherwise it stays in `rows`. |
+| all_sheets | bool | no | If true, return every sheet of the workbook under `sheets`. Xlsx only. |
 
 ## Returns
-On success:
+Single sheet:
 ```
-{
-  ok: true,
-  data: {
-    sheet: "<name>",
-    headers: ["col1", "col2", ...] | null,
-    rows: [[v1, v2, ...], ...],
-    row_count: <int>
-  }
-}
+{ok: true, data: {
+  sheet: "<name>", sheet_names: [...],
+  headers: [...] | null, rows: [[...], ...],
+  row_count: <int>, col_count: <int>
+}}
 ```
+All sheets (`all_sheets=true`):
+```
+{ok: true, data: {
+  sheet_names: [...],
+  sheets: [{sheet, headers, rows, row_count, col_count}, ...]
+}}
+```
+Dates / datetimes are returned as ISO-format strings.
 
 ## Errors
 - `file_not_found` — path does not exist.
 - `unsupported_format` — extension not in `.xlsx`, `.xlsm`, `.csv`, `.tsv`.
 - `sheet_not_found` — requested sheet name is not in the workbook.
-- `dependency_missing` — openpyxl is not installed in this environment.
+- `decode_error` — CSV/TSV file is not UTF-8.
+- `dependency_missing` — openpyxl is not installed.
 
 ## Examples
 ### Read default sheet of an xlsx
 Call: `xlsx.read(path="/data/loans.xlsx")`
-Returns: `{ok: true, data: {sheet: "Sheet1", headers: ["id","amount"], rows: [["L1",100], ...], row_count: 20}}`
 
 ### Read a specific sheet
 Call: `xlsx.read(path="/data/loans.xlsx", sheet="Q1")`
 
-### Read a CSV
-Call: `xlsx.read(path="/data/loans.csv")`
+### Dump every sheet of a multi-sheet workbook
+Call: `xlsx.read(path="/data/report.xlsx", all_sheets=true)`
+
+### Read a CSV without treating the first row as a header
+Call: `xlsx.read(path="/data/loans.csv", has_header=false)`
 
 ## See also
-- `text.extract_lines` — for prose, not tabular sources.
-- `docstore.fetch` — when the source is internally stored rather than at a path.
+- `xlsx.info` — sheet inventory + shape, no row data.
+- `xlsx.sql` — for anything that needs computation.
+- `xlsx.convert` — to reshape between xlsx / csv / tsv.

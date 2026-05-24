@@ -24,8 +24,9 @@ class RunStats:
     final_finish_reason: str = "stop"
 
 
-def build_system_prompt(bound: BoundPack) -> str:
-    """Compose the system prompt: a header + each skill's body."""
+def build_system_prompt(bound: BoundPack, files: Optional[List[dict]] = None) -> str:
+    """Compose the system prompt: a header + each skill's body, plus any
+    conversation-scoped file attachments the user has uploaded."""
     parts: List[str] = []
     parts.append(
         "You are a CIB Gen-AI sub-agent. Follow the loaded skills exactly. "
@@ -36,6 +37,30 @@ def build_system_prompt(bound: BoundPack) -> str:
     parts.append(f"Pack: {bound.pack.name} (v{bound.pack.version})")
     parts.append(f"Pack description: {bound.pack.description}")
     parts.append("")
+    if files:
+        parts.append(f"Files available in this conversation ({len(files)}):")
+        for f in files:
+            parts.append(
+                f"  - {f.get('name')} ({f.get('mime')}, {f.get('size')} bytes) "
+                f"@ {f.get('path')} [id={f.get('file_id')}]"
+            )
+        parts.append("")
+        # Only hint about file-reading tools that are actually bound to this
+        # pack; otherwise the model will try to call tools that don't exist.
+        file_tool_prefixes = ("pdf.", "xlsx.", "excel.", "docx.", "pptx.")
+        file_tools = [t for t in bound.tools if t.startswith(file_tool_prefixes)]
+        if file_tools:
+            parts.append(
+                "Use the file `path` with the file-reading tools available to "
+                f"this pack ({', '.join(sorted(file_tools))}). Do not invent paths."
+            )
+        else:
+            parts.append(
+                "This pack has no file-reading tools of its own. If the user's "
+                "request needs the contents of an attached file, delegate to a "
+                "specialist that can read it."
+            )
+        parts.append("")
     parts.append(f"Loaded skills ({len(bound.skills)}):")
     for s in bound.skills:
         parts.append("")
@@ -66,7 +91,7 @@ def run(
     emit: Callable[[dict], None],
 ) -> RunStats:
     """Run the sub-agent loop to completion. Returns stats; emits events."""
-    system = build_system_prompt(bound)
+    system = build_system_prompt(bound, files=ctx.files)
     tools = build_tool_specs(bound)
 
     for s in bound.skills:

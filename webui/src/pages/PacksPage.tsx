@@ -15,6 +15,7 @@ import { ClassificationBadge } from "@/components/ClassificationBadge";
 import { JsonBlock } from "@/components/JsonBlock";
 import { toast } from "sonner";
 import { PlayCircle } from "lucide-react";
+import { ROUTER_ONLY_PACKS } from "@/lib/utils";
 
 export function PacksPage() {
   const [packs, setPacks] = useState<PackSummary[]>([]);
@@ -22,7 +23,10 @@ export function PacksPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.packs().then(setPacks).catch((e) => toast.error(e.message));
+    api
+      .packs()
+      .then((all) => setPacks(all.filter((p) => !ROUTER_ONLY_PACKS.has(p.name))))
+      .catch((e) => toast.error(e.message));
   }, []);
 
   async function openDetail(name: string) {

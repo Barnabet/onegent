@@ -14,14 +14,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from evals import case as case_mod
 from runtime import pack_loader, skill_loader, tool_registry
-from server import eval_jobs, runs
+from server import eval_jobs, files as files_store, runs
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -199,6 +199,10 @@ class StartRunBody(BaseModel):
     # Escape hatch for tools/tests: pin the run to a specific pack instead of
     # going through the router. The web UI does not use this.
     pack: Optional[str] = None
+    # File metadata to make available to every agent on this run. The chat
+    # UI builds this from its uploaded-files list. Each entry is a FileMeta
+    # dict (file_id, name, size, mime, path, ...).
+    files: Optional[List[dict]] = None
 
 
 def _run_to_dict(r: "runs.LiveRun") -> dict:
@@ -226,6 +230,7 @@ async def start_run(body: StartRunBody) -> dict:
             body.user_message,
             body.user_id or "webui",
             loop=loop,
+            files=body.files,
         )
     else:
         # Default path: go through the router.
@@ -238,6 +243,7 @@ async def start_run(body: StartRunBody) -> dict:
             body.user_id or "webui",
             loop=loop,
             allowed_packs=allowed,
+            files=body.files,
         )
     return _run_to_dict(run)
 
@@ -307,6 +313,38 @@ async def stream_run(run_id: str):
             runs.unsubscribe(run, q)
 
     return EventSourceResponse(gen())
+
+
+# ---------------------------------------------------------------------------
+# Files (conversation attachments)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/files")
+async def upload_file(
+    conversation_id: str = Form(...),
+    file: UploadFile = File(...),
+) -> dict:
+    data = await file.read()
+    meta = files_store.save(
+        conversation_id=conversation_id,
+        name=file.filename or "file",
+        mime=file.content_type or "application/octet-stream",
+        data=data,
+    )
+    return files_store.to_dict(meta)
+
+
+@app.get("/api/files")
+def list_files(conversation_id: str) -> List[dict]:
+    return [files_store.to_dict(m) for m in files_store.list_for(conversation_id)]
+
+
+@app.delete("/api/files/{file_id}")
+def delete_file(file_id: str) -> dict:
+    if not files_store.delete(file_id):
+        raise HTTPException(404, f"File {file_id!r} not found")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

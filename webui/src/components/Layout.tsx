@@ -29,7 +29,7 @@ export function Layout() {
       <header className="border-b">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <div className="size-6 rounded bg-primary" />
+            <img src="/logo.png" alt="CIB Agents" className="size-7 rounded" />
             <span className="font-semibold tracking-tight">CIB Agents</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">
               orchestrator

@@ -3,7 +3,7 @@
 Generated from the live tool registry. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**25 tools** across **7 domains**.
+**33 tools** across **7 domains**.
 
 ## By domain
 
@@ -139,7 +139,7 @@ Call: `docstore.fetch(query="acme-credit-input")`
 
 ---
 tool: orchestrator.delegate
-version: 1
+version: 2
 owner: team-platform-ai
 classification: [public]
 tags: [routing, meta]
@@ -148,54 +148,81 @@ tags: [routing, meta]
 # orchestrator.delegate
 
 ## Purpose
-Hand off a self-contained sub-task to a specialist pack. The specialist
-runs in a fresh sub-agent loop with its own skills and tools, then
-returns its final text reply and a summary of what it did.
+Spawn a sub-agent to handle a self-contained sub-task. The sub-agent runs
+in a fresh loop with its own skills and tools, then returns its final
+text reply and a summary of what it did.
+
+Three shapes are supported:
+
+1. **Pack** — `pack="credit_analyst"`. The specialist runs with the
+   pack's own skills. Use when a specialist already matches the task.
+2. **Pack + extra skills** — `pack="credit_analyst", extra_skills=["pdf_handling"]`.
+   Splice extra skills (from `orchestrator.list_skills`) on top of the
+   pack's skills. Use when a specialist is *almost* right but needs one
+   more capability for this task.
+3. **Skills only** — `skills=["pdf_handling", "xlsx_handling"]`, no `pack`.
+   Ad-hoc sub-agent composed from individual skills, running under the
+   router's own model / classification / limits. Use when no specialist
+   fits but a combination of skills will.
 
 ## When to use
 - The user's request maps to a single specialist pack from
-  `orchestrator.list_packs`. Pick the best one and delegate.
+  `orchestrator.list_packs`. Pick it and delegate.
 - The user's request needs multiple specialists. Delegate to each one in
-  turn with the relevant sub-task; combine their answers yourself.
+  turn and combine the answers yourself.
+- The user's request needs a capability mix that no specialist provides.
+  Compose it from `orchestrator.list_skills` using `skills=[...]`.
 
 ## When NOT to use
 - For pure conversational replies ("hi", "what can you do?") — answer
   yourself. Do not delegate trivia.
-- To call a pack that is not in the allowed list — the call will fail
-  with `pack_not_allowed`.
-- To pass the user's raw message verbatim when it contains context the
-  specialist does not need. Rewrite the sub-task to be self-contained.
+- To call a pack outside `allowed_packs` — the call fails with
+  `pack_not_allowed`. (Skills are not gated; pick any from
+  `orchestrator.list_skills`.)
 
 ## Parameters
 | name | type | required | description |
 |---|---|---|---|
-| pack | string | yes | The pack name to delegate to. Must be in `allowed_packs`. |
-| message | string | yes | A self-contained sub-task for the specialist. Include all context it needs — it cannot see the parent conversation. |
+| pack | string | one-of | Specialist pack name. Must be in `allowed_packs`. |
+| skills | string[] | one-of | Skills for an ad-hoc sub-agent (no pack). Pick from `orchestrator.list_skills`. |
+| extra_skills | string[] | no | Extra skills to add on top of `pack`. Pick from `orchestrator.list_skills`. Ignored without `pack`. |
+| message | string | yes | Self-contained sub-task. Include all context — the sub-agent cannot see the parent conversation. |
+| files | string[] | no | Conversation `file_id`s to forward. Omit/`null` = all attachments (default). `[]` = none. Subset = only those. Unknown ids are dropped. |
+
+Exactly one of `pack` or `skills` must be set.
 
 ## Returns
-On success: `{ok: true, data: {pack, final_text, stats: {turns, tool_calls, finish_reason}}}`
+On success: `{ok: true, data: {pack, skills, final_text, stats: {turns, tool_calls, finish_reason}}}`
 
-`final_text` is the specialist's last reply. Quote it or summarise it for
-the user. The full event stream from the sub-agent is also forwarded
-into the parent run's audit log automatically — you do not need to
-re-emit it.
+`pack` is `null` for skills-only sub-agents. `skills` is the resolved
+skill list actually bound on the sub-agent. `final_text` is the
+sub-agent's last reply — quote it or summarise it for the user. The full
+event stream is forwarded into the parent run's audit log automatically.
 
 ## Errors
-- `pack_not_allowed` — `pack` is not in the router's `allowed_packs`.
-- `pack_not_found` — `pack` does not exist.
-- `subagent_failed` — the specialist raised; `error.message` has detail.
+- `invalid_input` — neither/both of `pack`/`skills` set, or `extra_skills`
+  passed without `pack`.
+- `pack_not_allowed` — `pack` not in `allowed_packs`.
+- `pack_not_found` — `pack` does not exist on disk.
+- `skill_not_found` / `skills_bind_failed` — a requested skill could not
+  be loaded or its tools/classification could not be bound.
+- `subagent_failed` — the sub-agent raised; `error.message` has detail.
 
 ## Examples
 ### Routing a credit memo request
 Call: `orchestrator.delegate(pack="credit_analyst", message="Draft a credit memo for Acme SpA. Financials: /tmp/acme.xlsx")`
-Returns: `{ok: true, data: {pack: "credit_analyst", final_text: "Memo drafted...", stats: {turns: 4, tool_calls: 3, finish_reason: "stop"}}}`
+Returns: `{ok: true, data: {pack: "credit_analyst", skills: [...], final_text: "Memo drafted...", stats: {turns: 4, tool_calls: 3, finish_reason: "stop"}}}`
 
-### Smoke-test
-Call: `orchestrator.delegate(pack="hello", message="ping")`
-Returns: `{ok: true, data: {pack: "hello", final_text: "Platform is alive...", stats: {...}}}`
+### Topping up a specialist with PDF reading
+Call: `orchestrator.delegate(pack="credit_analyst", extra_skills=["pdf_handling"], message="...", files=["f_kbis"])`
+
+### Skills-only ad-hoc sub-agent
+Call: `orchestrator.delegate(skills=["pdf_handling", "xlsx_handling"], message="Cross-check the totals in /tmp/a.pdf against /tmp/b.xlsx", files=["f_pdf", "f_xlsx"])`
+Returns: `{ok: true, data: {pack: null, skills: ["pdf_handling", "xlsx_handling"], final_text: "...", stats: {...}}}`
 
 ## See also
-- `orchestrator.list_packs` — see which packs are available first.
+- `orchestrator.list_packs` — see which specialist packs are available.
+- `orchestrator.list_skills` — see which skills you may compose.
 
 </details>
 
@@ -248,6 +275,64 @@ Returns: `{ok: true, data: {packs: [
 
 ## See also
 - `orchestrator.delegate` — actually invoke a specialist with a sub-task.
+
+</details>
+
+#### `orchestrator.list_skills` &nbsp; <sub>v1 · public · owner: team-platform-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: orchestrator.list_skills
+version: 1
+owner: team-platform-ai
+classification: [public]
+tags: [routing, meta]
+---
+
+# orchestrator.list_skills
+
+## Purpose
+List every skill installed on disk. These are the skills the orchestrator
+may compose into a sub-agent via `orchestrator.delegate` — either as
+`skills=[...]` (ad-hoc sub-agent) or `extra_skills=[...]` (added on top
+of a pack).
+
+This is **not** the same as the skills the orchestrator may invoke
+*itself*. The orchestrator's own callable skills are fixed by the router
+pack definition (`packs/router.yaml: skills:`) and are surfaced to the
+model as the tool list it already has access to.
+
+## When to use
+- Before composing a skills-only sub-agent, to see what's available.
+- When deciding whether to top up a `pack` delegation with `extra_skills`.
+
+## When NOT to use
+- If you have already called this in the current turn — the list does not
+  change mid-run. Cache the answer.
+
+## Parameters
+(none)
+
+## Returns
+On success: `{ok: true, data: {skills: [{name, description}, ...]}}`
+
+## Errors
+- `no_router_context` — this tool was called outside a router run.
+  Should not happen in practice.
+
+## Examples
+### Discovering composable skills
+Call: `orchestrator.list_skills()`
+Returns: `{ok: true, data: {skills: [
+  {name: "pdf_handling", description: "Read and inspect PDF files."},
+  {name: "xlsx_handling", description: "Inspect, query (SQL), read, write, edit, format, recalculate, and convert spreadsheets."},
+  {name: "router", description: "Routing rules for the orchestrator."}
+]}}`
+
+## See also
+- `orchestrator.delegate` — compose and invoke a sub-agent.
+- `orchestrator.list_packs` — see pre-defined specialist packs.
 
 </details>
 
@@ -1221,7 +1306,7 @@ On success:
 
 ## Examples
 ### A simple internal-class pack
-Call: `repo.scaffold_pack(name="credit_analyst", owner="team-credit-ai", description="Credit analysts drafting and reviewing corporate credit memos.", skills=["credit_memo", "xlsx_analysis"], classification="internal")`
+Call: `repo.scaffold_pack(name="credit_analyst", owner="team-credit-ai", description="Credit analysts drafting and reviewing corporate credit memos.", skills=["credit_memo", "xlsx_handling"], classification="internal")`
 Returns: `{ok: true, data: {pack: "credit_analyst", created: ["packs/credit_analyst.yaml"], next_steps: [...]}}`
 
 ## See also
@@ -1556,13 +1641,352 @@ Returns: `{ok: true, data: {words: 412, chars: 2890}}`
 
 ### `xlsx`
 
-#### `xlsx.read` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+#### `xlsx.convert` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.convert
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, write, convert]
+---
+
+# xlsx.convert
+
+## Purpose
+Convert a tabular file between `.xlsx`/`.xlsm`/`.csv`/`.tsv`, optionally
+extracting one sheet from a multi-sheet workbook or exploding every sheet
+into its own CSV.
+
+## When to use
+- The user wants a workbook as CSV (for a downstream tool, a diff, an email).
+- The user wants a CSV/TSV imported into a workbook.
+- The user wants every sheet of a multi-sheet workbook as separate CSVs
+  (one-file-per-sheet) — pass `explode_sheets=true`.
+- The user wants to extract a single sheet of a workbook into its own
+  smaller workbook.
+
+## When NOT to use
+- To change cell values — use `xlsx.edit_cells`.
+- To restyle — use `xlsx.format`.
+- To read the rows — use `xlsx.read` or `xlsx.sql`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Source file (`.xlsx`/`.xlsm`/`.csv`/`.tsv`). |
+| output | string | yes | Destination file, or destination directory when `explode_sheets=true`. Extension picks the target format. |
+| overwrite | bool | no | Replace existing output(s). Default false. |
+| sheet | string | no | For xlsx → csv/tsv or xlsx → xlsx single-sheet extract: which sheet to take. Default: first. |
+| explode_sheets | bool | no | If true and source is multi-sheet xlsx, write one CSV per sheet into the directory `output`. |
+
+## Returns
+Single-file conversion:
+```
+{ok: true, data: {output, sheet, sheet_count: 1}}
+```
+Explode mode:
+```
+{ok: true, data: {output_dir, files: [...], sheet_count: <int>}}
+```
+
+## Errors
+- `file_not_found` — source path does not exist.
+- `unsupported_format` — source or output extension is not tabular.
+- `sheet_not_found` — `sheet` is not in the workbook.
+- `output_exists` — destination exists and `overwrite=false`.
+- `invalid_input` — bad combination of `output` extension and mode.
+- `dependency_missing` — openpyxl is not installed and xlsx is involved.
+
+## Examples
+### Workbook (first sheet) → CSV
+Call: `xlsx.convert(path="/data/report.xlsx", output="/data/report.csv")`
+
+### Workbook → CSV, pick the sheet
+Call: `xlsx.convert(path="/data/report.xlsx", sheet="Revenue", output="/data/revenue.csv")`
+
+### CSV → xlsx
+Call: `xlsx.convert(path="/data/loans.csv", output="/data/loans.xlsx")`
+
+### TSV → CSV
+Call: `xlsx.convert(path="/data/x.tsv", output="/data/x.csv")`
+
+### Explode every sheet into its own CSV
+Call: `xlsx.convert(path="/data/report.xlsx", output="/data/report-sheets/", explode_sheets=true)`
+
+### Extract a single sheet into a one-sheet workbook
+Call: `xlsx.convert(path="/data/report.xlsx", sheet="Revenue", output="/data/revenue.xlsx")`
+
+## See also
+- `xlsx.read` — once converted, to inspect the result.
+- `xlsx.write` — to assemble multi-sheet workbooks from scratch.
+
+</details>
+
+#### `xlsx.edit_cells` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.edit_cells
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, write, edit, formula]
+---
+
+# xlsx.edit_cells
+
+## Purpose
+Set the values of specific cells in an existing `.xlsx`/`.xlsm` workbook,
+preserving all other cells, sheets, styles, and formulas. Write to a fresh
+output path; the input is never modified in place.
+
+## When to use
+- The user wants to update a small number of cells in a workbook (assumption
+  cells, totals, a status flag) without rebuilding the whole file.
+- A skill needs to inject a formula (e.g. `=SUM(B2:B10)`) into an existing
+  template.
+
+## When NOT to use
+- To rebuild a workbook from scratch — use `xlsx.write`.
+- To apply font / fill / number formats — use `xlsx.format`.
+- To recompute formula results after editing — chain `xlsx.recalc`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Source `.xlsx`/`.xlsm`. |
+| output | string | yes | Destination `.xlsx`/`.xlsm`. |
+| overwrite | bool | no | Replace existing output. Default false. |
+| sheet | string | no | Target sheet name; defaults to the first sheet. |
+| cells | list[{cell, value}] | yes | A1-notation cells and the values to assign. String values that start with `=` are written as Excel formulas. |
+
+## Returns
+```
+{ok: true, data: {output, sheet, cells_written: <int>}}
+```
+A `warnings[]` entry will mention `xlsx.recalc` whenever a formula was
+written, because openpyxl does not evaluate formulas itself.
+
+## Errors
+- `file_not_found` — source path does not exist.
+- `unsupported_format` — source is not `.xlsx`/`.xlsm`.
+- `sheet_not_found` — `sheet` is not in the workbook.
+- `output_exists` — destination exists and `overwrite=false`.
+- `invalid_input` — empty `cells` list, missing `cell` key, or bad A1 ref.
+- `write_failed` — disk or library error while saving.
+- `dependency_missing` — openpyxl is not installed.
+
+## Examples
+### Update three assumption cells
+Call:
+```
+xlsx.edit_cells(
+  path="/data/model.xlsx",
+  output="/data/model-v2.xlsx",
+  sheet="Assumptions",
+  cells=[
+    {"cell": "B2", "value": 0.05},
+    {"cell": "B3", "value": 0.12},
+    {"cell": "B4", "value": "Updated 2025-05"}
+  ]
+)
+```
+
+### Inject a SUM formula then recalc
+1. `xlsx.edit_cells(path="/data/m.xlsx", output="/data/m2.xlsx", cells=[{"cell": "B11", "value": "=SUM(B2:B10)"}])`
+2. `xlsx.recalc(path="/data/m2.xlsx")`
+
+## See also
+- `xlsx.write` — when you're building a brand-new workbook.
+- `xlsx.format` — for styling, not values.
+- `xlsx.recalc` — materialise formula results.
+
+</details>
+
+#### `xlsx.format` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.format
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, write, format, style]
+---
+
+# xlsx.format
+
+## Purpose
+Apply font, fill, alignment, number format, and column widths to a range in
+an existing `.xlsx`/`.xlsm` workbook. Cell values are preserved.
+
+## When to use
+- The user asks for a header row to be bold, a column to be currency-formatted,
+  zero values shown as a dash, a key assumption cell highlighted yellow, or a
+  column widened.
+- A skill is producing a deliverable and needs the financial-model conventions
+  applied (blue inputs, black formulas, $#,##0 currency, etc.).
+
+## When NOT to use
+- To change cell *values* — use `xlsx.edit_cells`.
+- To build a new workbook — use `xlsx.write`, then come back here.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Source `.xlsx`/`.xlsm`. |
+| output | string | yes | Destination `.xlsx`/`.xlsm`. |
+| overwrite | bool | no | Replace existing output. Default false. |
+| sheet | string | no | Target sheet; defaults to the first. |
+| range | string | yes | A1 range, e.g. `'A1'`, `'A1:C10'`, `'B:B'`, `'2:2'`. |
+| font_name | string | no | e.g. `'Arial'`. |
+| font_size | number | no | Points. |
+| bold | bool | no | |
+| italic | bool | no | |
+| font_color | string | no | ARGB/RGB hex, e.g. `'0000FF'` (industry-standard blue for hardcoded inputs). |
+| fill_color | string | no | ARGB/RGB hex, e.g. `'FFFF00'` for a yellow assumption highlight. |
+| align | string | no | `'left'` \| `'center'` \| `'right'`. |
+| number_format | string | no | Excel number format, e.g. `'$#,##0;($#,##0);-'`, `'0.0%'`, `'0.0x'`. |
+| column_widths | object | no | `{column_letter: width}` map applied to the same sheet. |
+
+### Financial-model colour conventions (recommended)
+- Hardcoded inputs / scenario knobs: blue text `'0000FF'`.
+- Formulas / calculations: black text (default).
+- Cross-sheet links: green text `'008000'`.
+- External-file links: red text `'FF0000'`.
+- Key assumption cells: yellow fill `'FFFF00'`.
+
+## Returns
+```
+{ok: true, data: {output, sheet, cells_formatted: <int>}}
+```
+
+## Errors
+- `file_not_found` — source path does not exist.
+- `unsupported_format` — source is not `.xlsx`/`.xlsm`.
+- `sheet_not_found` — `sheet` is not in the workbook.
+- `output_exists` — destination exists and `overwrite=false`.
+- `invalid_input` — missing or bad `range`.
+- `write_failed` — disk or library error while saving.
+- `dependency_missing` — openpyxl is not installed.
+
+## Examples
+### Bold the header row and widen columns
+Call:
+```
+xlsx.format(
+  path="/data/m.xlsx", output="/data/m-styled.xlsx",
+  range="A1:D1", bold=true, fill_color="DDDDDD",
+  column_widths={"A": 20, "B": 14, "C": 14, "D": 14}
+)
+```
+
+### Currency format on a column, zeros as dash
+Call:
+```
+xlsx.format(
+  path="/data/m.xlsx", output="/data/m2.xlsx",
+  range="C2:C100", number_format="$#,##0;($#,##0);-"
+)
+```
+
+### Highlight a key assumption
+Call:
+```
+xlsx.format(
+  path="/data/m.xlsx", output="/data/m2.xlsx",
+  sheet="Assumptions", range="B2", fill_color="FFFF00", font_color="0000FF", bold=true
+)
+```
+
+## See also
+- `xlsx.edit_cells` — to change values, not styling.
+- `xlsx.write` — initial workbook creation.
+
+</details>
+
+#### `xlsx.info` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.info
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, read, metadata]
+---
+
+# xlsx.info
+
+## Purpose
+Return the sheet inventory of a spreadsheet (name, shape, header preview)
+plus workbook metadata, without dumping the actual rows.
+
+## When to use
+- The user gives you a workbook and you need to decide *which* sheet(s)
+  matter before doing anything else — especially for multi-sheet `.xlsx`
+  files.
+- A skill needs the column names of every sheet to pick the right one or
+  to compose an `xlsx.sql` query.
+- The user asks "what's in this file?" — answer with the inventory before
+  optionally drilling in.
+
+## When NOT to use
+- To read the actual data — use `xlsx.read` (raw rows) or `xlsx.sql`
+  (computation).
+- To inspect a PDF — use `pdf.read`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.xlsx`, `.xlsm`, `.csv`, or `.tsv` file. |
+
+## Returns
+```
+{ok: true, data: {
+  format: "xlsx" | "xlsm" | "csv" | "tsv",
+  sheet_count: <int>,
+  sheets: [
+    {name, row_count, col_count, headers_preview: [...]},
+    ...
+  ],
+  metadata: {title, creator, created, modified}   # xlsx/xlsm only
+}}
+```
+`row_count` excludes the header row.
+
+## Errors
+- `file_not_found` — path does not exist.
+- `unsupported_format` — extension not in `.xlsx`, `.xlsm`, `.csv`, `.tsv`.
+- `dependency_missing` — openpyxl is not installed.
+
+## Examples
+### Inventory a multi-sheet workbook
+Call: `xlsx.info(path="/data/q3-report.xlsx")`
+Returns: `{ok: true, data: {sheet_count: 3, sheets: [{name: "Revenue", row_count: 120, col_count: 8, headers_preview: [...]}, ...]}}`
+
+### Shape of a CSV
+Call: `xlsx.info(path="/data/loans.csv")`
+
+## See also
+- `xlsx.read` — once you know which sheet you want.
+- `xlsx.sql` — to compute over the sheets you discovered here.
+
+</details>
+
+#### `xlsx.read` &nbsp; <sub>v2 · internal · owner: team-doc-ai</sub>
 
 <details><summary>card</summary>
 
 ---
 tool: xlsx.read
-version: 1
+version: 2
 owner: team-doc-ai
 classification: [internal]
 tags: [spreadsheet, read, tabular]
@@ -1572,60 +1996,385 @@ tags: [spreadsheet, read, tabular]
 
 ## Purpose
 Read a spreadsheet file (`.xlsx`, `.xlsm`, `.csv`, or `.tsv`) and return its
-contents as a header row + list of data rows.
+contents as a header row + list of data rows, optionally for every sheet in
+a workbook at once.
 
 ## When to use
-- The user gives you a path to a spreadsheet and asks you to inspect, analyse,
-  or summarise its contents.
-- A skill needs the rows from a workbook before doing any analysis on them.
+- The user gives you a path to a spreadsheet and wants you to look at the
+  actual rows (for a sample, a small dump, or a copy into your reasoning).
+- A skill needs the raw cells of a workbook before deciding what to do next.
+- The user wants every sheet of a multi-sheet workbook in one call —
+  pass `all_sheets=true`.
 
 ## When NOT to use
-- For writing or modifying a workbook — not supported yet; will be `xlsx.write_*`.
-- For complex pivot / chart inspection — not supported; returns raw cell values.
-- For reading PDFs of spreadsheet exports — use `pdf.extract_tables` (when
-  available).
+- To *compute* anything (sum, average, group-by, join, filter): call
+  `xlsx.sql` instead. Pulling all rows into your context just to sum them is
+  wasteful and error-prone.
+- To learn shape / sheet names / column previews without the data: call
+  `xlsx.info` — much cheaper for large files.
+- To modify a workbook: use `xlsx.write`, `xlsx.edit_cells`, `xlsx.format`.
+- To read a PDF table: use `pdf.extract_tables`.
 
 ## Parameters
 | name | type | required | description |
 |---|---|---|---|
-| path | string | yes | Absolute or relative path to the file. |
-| sheet | string | no | Sheet name (xlsx only). Defaults to the first sheet. |
+| path | string | yes | Path to the file. |
+| sheet | string | no | Sheet name (xlsx only). Defaults to the first sheet. Ignored when `all_sheets=true`. |
 | has_header | bool | no | If true (default), the first row becomes `headers`; otherwise it stays in `rows`. |
+| all_sheets | bool | no | If true, return every sheet of the workbook under `sheets`. Xlsx only. |
 
 ## Returns
-On success:
+Single sheet:
 ```
-{
-  ok: true,
-  data: {
-    sheet: "<name>",
-    headers: ["col1", "col2", ...] | null,
-    rows: [[v1, v2, ...], ...],
-    row_count: <int>
-  }
-}
+{ok: true, data: {
+  sheet: "<name>", sheet_names: [...],
+  headers: [...] | null, rows: [[...], ...],
+  row_count: <int>, col_count: <int>
+}}
 ```
+All sheets (`all_sheets=true`):
+```
+{ok: true, data: {
+  sheet_names: [...],
+  sheets: [{sheet, headers, rows, row_count, col_count}, ...]
+}}
+```
+Dates / datetimes are returned as ISO-format strings.
 
 ## Errors
 - `file_not_found` — path does not exist.
 - `unsupported_format` — extension not in `.xlsx`, `.xlsm`, `.csv`, `.tsv`.
 - `sheet_not_found` — requested sheet name is not in the workbook.
-- `dependency_missing` — openpyxl is not installed in this environment.
+- `decode_error` — CSV/TSV file is not UTF-8.
+- `dependency_missing` — openpyxl is not installed.
 
 ## Examples
 ### Read default sheet of an xlsx
 Call: `xlsx.read(path="/data/loans.xlsx")`
-Returns: `{ok: true, data: {sheet: "Sheet1", headers: ["id","amount"], rows: [["L1",100], ...], row_count: 20}}`
 
 ### Read a specific sheet
 Call: `xlsx.read(path="/data/loans.xlsx", sheet="Q1")`
 
-### Read a CSV
-Call: `xlsx.read(path="/data/loans.csv")`
+### Dump every sheet of a multi-sheet workbook
+Call: `xlsx.read(path="/data/report.xlsx", all_sheets=true)`
+
+### Read a CSV without treating the first row as a header
+Call: `xlsx.read(path="/data/loans.csv", has_header=false)`
 
 ## See also
-- `text.extract_lines` — for prose, not tabular sources.
-- `docstore.fetch` — when the source is internally stored rather than at a path.
+- `xlsx.info` — sheet inventory + shape, no row data.
+- `xlsx.sql` — for anything that needs computation.
+- `xlsx.convert` — to reshape between xlsx / csv / tsv.
+
+</details>
+
+#### `xlsx.recalc` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.recalc
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, write, formula, recalc]
+---
+
+# xlsx.recalc
+
+## Purpose
+Recalculate every formula in an `.xlsx`/`.xlsm` workbook (via LibreOffice
+headless), materialise the resulting values, and report any residual Excel
+errors (`#REF!`, `#DIV/0!`, `#VALUE!`, `#N/A`, `#NAME?`, `#NUM!`, `#NULL!`).
+
+Required after any `xlsx.write` / `xlsx.edit_cells` call that injected
+formulas — openpyxl writes formula strings but does not evaluate them.
+
+## When to use
+- You injected `=SUM(...)`, `=AVERAGE(...)`, `=VLOOKUP(...)` etc. via
+  `xlsx.write` or `xlsx.edit_cells` and the user needs the *values* visible
+  in the workbook (e.g. so a downstream tool that reads with `data_only=true`
+  sees them).
+- You want a post-edit error scan to catch broken references before
+  delivering the file.
+
+## When NOT to use
+- Workbooks with no formulas (CSV outputs, value-only tables) — nothing to
+  recalculate.
+- Performance-sensitive loops — LibreOffice startup is non-trivial.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Workbook to recalculate. |
+| output | string | no | Where to write the result. Omit to overwrite the input in place. |
+| overwrite | bool | no | If `output` is given and exists, allow replacing it. |
+| timeout_seconds | int | no | Hard timeout for the LibreOffice call (default 60). |
+
+## Returns
+```
+{ok: true, data: {
+  output: "<path>",
+  status: "success" | "errors_found",
+  total_errors: <int>,
+  error_summary: {
+    "#REF!": {"count": 2, "locations": ["Sheet1!B5", "Sheet1!C10"]},
+    ...
+  }
+}}
+```
+
+## Errors
+- `file_not_found` — source path does not exist.
+- `unsupported_format` — source is not `.xlsx`/`.xlsm`.
+- `dependency_missing` — `soffice` (LibreOffice) is not on PATH.
+- `recalc_failed` — LibreOffice exited non-zero or produced no output.
+- `timeout` (retriable) — LibreOffice did not finish in time.
+- `output_exists` — `output` exists and `overwrite=false`.
+
+## Examples
+### Recalculate in place
+Call: `xlsx.recalc(path="/data/model.xlsx")`
+
+### Recalculate to a separate file
+Call: `xlsx.recalc(path="/data/model.xlsx", output="/data/model-final.xlsx")`
+
+### Typical edit → recalc → verify chain
+1. `xlsx.edit_cells(path="...", output="m2.xlsx", cells=[{"cell":"B11","value":"=SUM(B2:B10)"}])`
+2. `xlsx.recalc(path="m2.xlsx")`
+3. If `status="errors_found"`, inspect `error_summary` and fix the formulas
+   with another `xlsx.edit_cells` round.
+
+## See also
+- `xlsx.write`, `xlsx.edit_cells` — produce the formulas this recalculates.
+- `xlsx.read` — read the values back after recalc.
+
+</details>
+
+#### `xlsx.sql` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.sql
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, read, query, sql]
+---
+
+# xlsx.sql
+
+## Purpose
+Run a read-only SQL query over one or more spreadsheet files. Each input is
+loaded into an in-memory SQLite database; every `.xlsx` sheet becomes its own
+table. Use this whenever the user wants computation (sum, average, group-by,
+join, filter, top-N, distinct) — never reimplement that in your head.
+
+## When to use
+- The user asks a question that requires aggregation, filtering, joining,
+  sorting, or grouping over tabular data — even on a single sheet.
+- The data is large enough that dumping rows via `xlsx.read` and computing in
+  your head would be slow, wasteful, or unreliable.
+- You need to join two files (e.g. a CSV against a sheet from a workbook).
+
+## When NOT to use
+- To dump the raw rows for a few-line preview — `xlsx.read` is simpler.
+- To inspect schema / sheet names — use `xlsx.info` first, then craft the SQL.
+- To *modify* a workbook — this tool is read-only. Use `xlsx.write` or
+  `xlsx.edit_cells`.
+- To read a PDF table — use `pdf.extract_tables`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| inputs | list | yes | Each entry is either a path string or `{path, alias?, sheet?}`. `.xlsx` files load every sheet as a separate table; pass `sheet=...` to restrict, or `alias=...` to rename the table. |
+| query | string | yes | A single read-only SQL statement (`SELECT`, `WITH`, or `VALUES`). SQLite dialect. No semicolons, no DDL/DML. |
+| max_rows | int | no | Cap on returned rows (default 1000). |
+
+### Table naming rules
+- A CSV/TSV named `loans.csv` becomes table `loans`. Pass `alias` to rename.
+- A workbook `report.xlsx` with sheets `Revenue`, `Costs` becomes tables
+  `Revenue`, `Costs`. Pass `sheet="Revenue"` to load just one. With multiple
+  files that share sheet names, pass `alias` to disambiguate (e.g.
+  `alias="q1"` → tables become `q1_Revenue`, `q1_Costs`).
+- Non-identifier characters in sheet names are replaced with `_`; the original
+  name is returned in `data.tables`.
+- The first row of each sheet/file is used as column names (sanitised the
+  same way). Quote identifiers with double quotes if they contain odd
+  characters: `SELECT "Net Revenue" FROM Revenue`.
+
+### Type handling
+- Values are inserted as their native Python types (text / number / null).
+  Use `CAST("col" AS REAL)` if a column read as text needs arithmetic.
+
+## Returns
+```
+{ok: true, data: {
+  columns: ["col_a", "col_b", ...],
+  rows: [[...], ...],
+  row_count: <int>,
+  truncated: <bool>,
+  tables: {"<sqlite-table>": {"path": "...", "sheet": "..."}, ...}
+}}
+```
+
+## Errors
+- `file_not_found` — one of the input paths does not exist.
+- `unsupported_format` — an input extension is not tabular.
+- `sheet_not_found` — `sheet` filter does not match any sheet in the workbook.
+- `invalid_input` — empty query, multiple statements, or no inputs.
+- `forbidden_statement` — query is not `SELECT`/`WITH`/`VALUES`, or mentions a
+  write keyword.
+- `sql_error` — SQLite rejected the query (syntax error, unknown table, etc.).
+- `dependency_missing` — openpyxl is not installed and an xlsx input was given.
+
+## Examples
+### Sum a column on a single CSV
+Call:
+```
+xlsx.sql(
+  inputs=["/data/loans.csv"],
+  query="SELECT SUM(amount) AS total FROM loans"
+)
+```
+
+### Aggregate across one sheet of a workbook
+Call:
+```
+xlsx.sql(
+  inputs=[{"path": "/data/report.xlsx", "sheet": "Revenue", "alias": "rev"}],
+  query="SELECT region, SUM(net) AS net FROM rev GROUP BY region ORDER BY net DESC"
+)
+```
+
+### Join two files
+Call:
+```
+xlsx.sql(
+  inputs=[
+    {"path": "/data/customers.csv"},
+    {"path": "/data/orders.xlsx", "sheet": "2024"}
+  ],
+  query="SELECT c.name, SUM(o.amount) AS spend FROM customers c JOIN \"2024\" o ON o.customer_id = c.id GROUP BY c.name"
+)
+```
+
+### Join every sheet of a multi-sheet workbook
+Call:
+```
+xlsx.sql(
+  inputs=[{"path": "/data/quarterly.xlsx", "alias": "q"}],
+  query="SELECT 'Q1' AS quarter, SUM(amount) FROM q_Q1 UNION ALL SELECT 'Q2', SUM(amount) FROM q_Q2"
+)
+```
+
+## See also
+- `xlsx.info` — discover sheet and column names before writing SQL.
+- `xlsx.read` — when you need raw rows, not a computed answer.
+
+</details>
+
+#### `xlsx.write` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: xlsx.write
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [spreadsheet, write, create]
+---
+
+# xlsx.write
+
+## Purpose
+Create a brand-new spreadsheet from in-memory rows. Supports `.xlsx`/`.xlsm`
+(single- or multi-sheet) and `.csv`/`.tsv` (single-sheet only). Never
+modifies an existing workbook in place — see `xlsx.edit_cells` for that.
+
+## When to use
+- The user asks you to produce a fresh spreadsheet from data you have already
+  computed or extracted.
+- A skill needs to materialise a multi-sheet workbook (e.g. one sheet per
+  region) in one call.
+
+## When NOT to use
+- To edit specific cells of an existing workbook (preserving everything else)
+  — use `xlsx.edit_cells`.
+- To restyle existing cells — use `xlsx.format`.
+- To convert between formats — use `xlsx.convert`.
+- To write computed values from formulas — write the formula via
+  `xlsx.edit_cells` (or as a string here) and then run `xlsx.recalc`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| output | string | yes | Destination path. Extension picks the format. |
+| overwrite | bool | no | Replace existing file. Default false. |
+| sheets | object | no* | Multi-sheet form: `{sheet_name: {headers?, rows}}`. xlsx only. |
+| sheet_name | string | no* | Single-sheet form: name of the sheet (default 'Sheet1'). |
+| headers | list | no* | Single-sheet form: header row. |
+| rows | list[list] | no* | Single-sheet form: data rows. |
+
+\* Provide either `sheets` (multi-sheet) **or** `sheet_name`/`headers`/`rows`
+(single-sheet). Mixing both is undefined.
+
+### Formula cells
+A string value beginning with `=` (e.g. `"=SUM(A2:A10)"`) is written as an
+Excel formula. The cell's *value* is not materialised until you run
+`xlsx.recalc`. CSV/TSV outputs treat such strings literally.
+
+## Returns
+```
+{ok: true, data: {output, sheet_names: [...], sheet_count: <int>}}
+```
+
+## Errors
+- `invalid_input` — neither `sheets` nor `headers`/`rows` was provided; or a
+  malformed sheet spec; or CSV requested with multiple sheets.
+- `unsupported_format` — output extension is not tabular.
+- `output_exists` — file exists and `overwrite=false`.
+- `write_failed` — disk or library error while saving.
+- `dependency_missing` — openpyxl is not installed (xlsx output).
+
+## Examples
+### Single-sheet xlsx
+Call:
+```
+xlsx.write(
+  output="/tmp/loans.xlsx",
+  sheet_name="Loans",
+  headers=["id", "amount"],
+  rows=[["L1", 100], ["L2", 250]]
+)
+```
+
+### Multi-sheet workbook
+Call:
+```
+xlsx.write(
+  output="/tmp/quarterly.xlsx",
+  sheets={
+    "Q1": {"headers": ["region","net"], "rows": [["EMEA", 12], ["NA", 18]]},
+    "Q2": {"headers": ["region","net"], "rows": [["EMEA", 14], ["NA", 22]]}
+  }
+)
+```
+
+### CSV output
+Call: `xlsx.write(output="/tmp/loans.csv", headers=["id","amount"], rows=[["L1",100]])`
+
+### A sheet with totals as formulas (then recalc)
+1. `xlsx.write(output="/tmp/m.xlsx", sheet_name="M", headers=["amt"], rows=[[10],[20],[30],["=SUM(A2:A4)"]])`
+2. `xlsx.recalc(path="/tmp/m.xlsx")`
+
+## See also
+- `xlsx.edit_cells` — modify cells in an existing workbook.
+- `xlsx.format` — apply font / fill / number format after writing.
+- `xlsx.recalc` — materialise formula results.
+- `xlsx.convert` — same data shape, different format.
 
 </details>
 
@@ -1633,35 +2382,44 @@ Call: `xlsx.read(path="/data/loans.csv")`
 
 - **catalog** — `repo.read_catalog`, `repo.search_catalog`
 - **combine** — `pdf.merge`
+- **convert** — `xlsx.convert`
+- **create** — `xlsx.write`
 - **dedup** — `repo.search_catalog`
 - **deterministic** — `text.extract_lines`, `text.word_count`
 - **diagnostic** — `core.echo`
 - **docs** — `repo.read_doc`
 - **docstore** — `docstore.fetch`
+- **edit** — `xlsx.edit_cells`
 - **extract** — `text.extract_lines`
 - **fetch** — `docstore.fetch`
+- **format** — `xlsx.format`
 - **forms** — `pdf.fill_form`, `pdf.form_fields`
+- **formula** — `xlsx.edit_cells`, `xlsx.recalc`
 - **internal-docs** — `docstore.fetch`
-- **meta** — `orchestrator.delegate`, `orchestrator.list_packs`
-- **metadata** — `pdf.read`
+- **meta** — `orchestrator.delegate`, `orchestrator.list_packs`, `orchestrator.list_skills`
+- **metadata** — `pdf.read`, `xlsx.info`
 - **metrics** — `text.word_count`
 - **numeric** — `text.extract_lines`
 - **ocr** — `pdf.ocr`
 - **pack-authoring** — `repo.scaffold_pack`
 - **pdf** — `pdf.decrypt`, `pdf.encrypt`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.fill_form`, `pdf.form_fields`, `pdf.merge`, `pdf.ocr`, `pdf.read`, `pdf.rotate`, `pdf.see`, `pdf.split`
-- **read** — `docstore.fetch`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.form_fields`, `pdf.ocr`, `pdf.read`, `pdf.see`, `repo.read_catalog`, `repo.read_doc`, `xlsx.read`
+- **query** — `xlsx.sql`
+- **read** — `docstore.fetch`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.form_fields`, `pdf.ocr`, `pdf.read`, `pdf.see`, `repo.read_catalog`, `repo.read_doc`, `xlsx.info`, `xlsx.read`, `xlsx.sql`
+- **recalc** — `xlsx.recalc`
 - **reference** — `repo.read_catalog`, `repo.read_doc`
-- **routing** — `orchestrator.delegate`, `orchestrator.list_packs`
+- **routing** — `orchestrator.delegate`, `orchestrator.list_packs`, `orchestrator.list_skills`
 - **scaffold** — `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
 - **search** — `repo.search_catalog`
 - **security** — `pdf.decrypt`, `pdf.encrypt`
 - **skill-authoring** — `repo.scaffold_skill`
 - **smoke-test** — `core.echo`
 - **split** — `pdf.split`
-- **spreadsheet** — `xlsx.read`
+- **spreadsheet** — `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.info`, `xlsx.read`, `xlsx.recalc`, `xlsx.sql`, `xlsx.write`
+- **sql** — `xlsx.sql`
+- **style** — `xlsx.format`
 - **tabular** — `pdf.extract_tables`, `xlsx.read`
 - **text** — `pdf.extract_text`, `text.extract_lines`, `text.word_count`
 - **tool-authoring** — `repo.scaffold_tool`
 - **transform** — `pdf.rotate`
 - **vision** — `pdf.see`
-- **write** — `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
+- **write** — `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`, `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.recalc`, `xlsx.write`

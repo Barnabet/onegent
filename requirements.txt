@@ -6,6 +6,7 @@ openpyxl>=3.1,<4
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 sse-starlette>=2.1,<3
+python-multipart>=0.0.9,<1
 # PDF domain. pypdf is required; pdfplumber/pypdfium2 enable extract_tables,
 # ocr, and see. pytesseract (plus the system tesseract binary) is only
 # needed for pdf.ocr and is therefore left optional.

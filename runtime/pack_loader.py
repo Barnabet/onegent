@@ -127,3 +127,30 @@ def bind(pack: Pack, skills_root_path: Optional[Path] = None) -> BoundPack:
         )
 
     return bound
+
+
+def bind_skills(
+    skill_names: List[str],
+    identity: Pack,
+    skills_root_path: Optional[Path] = None,
+) -> BoundPack:
+    """Bind an explicit list of skills under the given pack identity.
+
+    Used by `orchestrator.delegate` for ad-hoc sub-agents (skills-only or
+    pack + extra_skills) where `identity` carries the model / classification
+    / limits to run under but the skill list is composed at delegate time.
+    The identity's own `skills` field is ignored — only `skill_names` is bound.
+    """
+    pack = Pack(
+        name=identity.name,
+        version=identity.version,
+        owner=identity.owner,
+        description=identity.description,
+        skills=list(skill_names),
+        classification=identity.classification,
+        allowed_data_sources=list(identity.allowed_data_sources),
+        model=identity.model,
+        limits=identity.limits,
+        risk_review=identity.risk_review,
+    )
+    return bind(pack, skills_root_path=skills_root_path)

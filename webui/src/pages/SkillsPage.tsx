@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ClassificationBadge } from "@/components/ClassificationBadge";
+import { ROUTER_ONLY_SKILLS } from "@/lib/utils";
 import { toast } from "sonner";
 
 export function SkillsPage() {
@@ -17,7 +18,10 @@ export function SkillsPage() {
   const [detail, setDetail] = useState<SkillDetail | null>(null);
 
   useEffect(() => {
-    api.skills().then(setSkills).catch((e) => toast.error(e.message));
+    api
+      .skills()
+      .then((all) => setSkills(all.filter((s) => !ROUTER_ONLY_SKILLS.has(s.name))))
+      .catch((e) => toast.error(e.message));
   }, []);
 
   async function openDetail(name: string) {

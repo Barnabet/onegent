@@ -90,6 +90,16 @@ export type RunEvent = {
 
 export type RunDetail = RunSummary & { events: RunEvent[] };
 
+export type FileMeta = {
+  file_id: string;
+  conversation_id: string;
+  name: string;
+  size: number;
+  mime: string;
+  uploaded_at: number;
+  path: string;
+};
+
 export type EvalAssertion = { kind: string; [k: string]: unknown };
 
 export type EvalCase = {
@@ -168,11 +178,26 @@ export const api = {
   packs: () => getJSON<PackSummary[]>("/api/packs"),
   pack: (name: string) => getJSON<PackDetail>(`/api/packs/${encodeURIComponent(name)}`),
 
-  startRun: (user_message: string, allowed_packs?: string[]) =>
-    postJSON<RunSummary>("/api/runs", { user_message, allowed_packs }),
+  startRun: (user_message: string, allowed_packs?: string[], files?: FileMeta[]) =>
+    postJSON<RunSummary>("/api/runs", { user_message, allowed_packs, files }),
   runs: () => getJSON<RunSummary[]>("/api/runs"),
   run: (id: string) => getJSON<RunDetail>(`/api/runs/${encodeURIComponent(id)}`),
   runStreamUrl: (id: string) => `/api/runs/${encodeURIComponent(id)}/stream`,
+
+  listFiles: (conversation_id: string) =>
+    getJSON<FileMeta[]>(`/api/files?conversation_id=${encodeURIComponent(conversation_id)}`),
+  uploadFile: async (conversation_id: string, file: File): Promise<FileMeta> => {
+    const fd = new FormData();
+    fd.append("conversation_id", conversation_id);
+    fd.append("file", file);
+    const r = await fetch("/api/files", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText} on /api/files`);
+    return r.json();
+  },
+  deleteFile: async (file_id: string): Promise<void> => {
+    const r = await fetch(`/api/files/${encodeURIComponent(file_id)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText} on /api/files/${file_id}`);
+  },
 
   evalCases: () => getJSON<EvalCase[]>("/api/evals/cases"),
   startEval: (pack: string | null, caseId: string | null, useJudge: boolean) =>

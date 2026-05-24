@@ -4,11 +4,11 @@ owner: team-credit-ai
 
 description: >
   Pilot pack for credit analysts. Reuses the same tools (xlsx.read,
-  text.extract_lines, text.word_count) across the spreadsheet analysis and
+  text.extract_lines, text.word_count) across the spreadsheet handling and
   credit memo skills. Demonstrates the tool-reuse discipline end-to-end.
 
 skills:
-  - xlsx_analysis
+  - xlsx_handling
   - credit_memo
 
 classification: confidential

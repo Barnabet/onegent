@@ -35,7 +35,7 @@ description: >
 
 skills:
   - credit_memo
-  - xlsx_analysis
+  - xlsx_handling
   - financial_summary
 
 classification: confidential       # ceiling — see below

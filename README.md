@@ -39,14 +39,14 @@ eval dashboard.
 | Skill | Tools used | Shared with |
 |---|---|---|
 | `hello` | `core.echo` | — |
-| `xlsx_analysis` | `xlsx.read`, `text.word_count` | reused by `credit_memo` |
-| `credit_memo` | `docstore.fetch`, `xlsx.read`, `text.extract_lines`, `text.word_count` | reuses xlsx_analysis's tools |
+| `xlsx_handling` | `xlsx.info`, `xlsx.read`, `xlsx.sql`, `xlsx.write`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.convert`, `xlsx.recalc` | reused by `credit_memo` |
+| `credit_memo` | `docstore.fetch`, `xlsx.read`, `text.extract_lines`, `text.word_count` | reuses xlsx_handling's tools |
 | `skill_creator` | all `repo.*` tools | — (bootstrap) |
 
 | Pack | Skills |
 |---|---|
 | `hello` | `hello` |
-| `credit_analyst` | `xlsx_analysis` + `credit_memo` |
+| `credit_analyst` | `xlsx_handling` + `credit_memo` |
 | `skill_creator` | `skill_creator` |
 
 ## Start here
@@ -67,7 +67,7 @@ cib-agents/
 │   ├── skill/
 │   └── pack/
 ├── tools/               # by domain — core, repo, docstore, text, xlsx
-├── skills/              # hello, xlsx_analysis, credit_memo, skill_creator
+├── skills/              # hello, xlsx_handling, credit_memo, skill_creator
 ├── packs/               # hello, credit_analyst, skill_creator
 ├── fixtures/            # docstore mock data for the pilots
 ├── orchestrator/        # supervisor.py + worker_entry.py + subagent.py

@@ -34,6 +34,7 @@ def run(
     run_id: Optional[str] = None,
     timeout: Optional[float] = None,
     allowed_packs: Optional[List[str]] = None,
+    files: Optional[List[dict]] = None,
 ) -> RunResult:
     """Spawn a worker, collect events to completion, return the final reply."""
     rid = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -46,6 +47,7 @@ def run(
         user_id=user_id,
         user_message=user_message,
         allowed_packs=allowed_packs,
+        files=files,
     )
 
     proc = mp_ctx.Process(target=worker_main, args=(child_conn, job), daemon=True)

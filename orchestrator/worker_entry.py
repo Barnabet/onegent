@@ -29,6 +29,10 @@ class WorkerJob:
     # allowed to delegate to via orchestrator.delegate. None for regular
     # (non-routing) runs.
     allowed_packs: Optional[List[str]] = None
+    # Files uploaded in this conversation. Each entry is a metadata dict
+    # ({file_id, name, size, mime, path, ...}). Propagated to every agent
+    # via ToolCtx.files; the sub-agent loop surfaces it in the system prompt.
+    files: Optional[List[dict]] = None
 
 
 def worker_main(conn: Connection, job: WorkerJob) -> None:
@@ -77,6 +81,7 @@ def _run(conn: Connection, job: WorkerJob) -> None:
         audit=audit,
         allowed_packs=job.allowed_packs,
         emit=emit,
+        files=job.files,
     )
 
     try:

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type PackSummary, type RunEvent, type RunSummary } from "@/lib/api";
+import { api, type FileMeta, type PackSummary, type RunEvent, type RunSummary } from "@/lib/api";
+import { FilesSidebar } from "@/components/FilesSidebar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
   SheetContent,
@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ClassificationBadge } from "@/components/ClassificationBadge";
 import { EventCard } from "@/components/EventCard";
 import { JsonBlock } from "@/components/JsonBlock";
+import { Markdown } from "@/components/Markdown";
 import { Send, Loader2, Database, Settings2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -34,6 +35,15 @@ export function ChatPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [running, setRunning] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
+
+  // One conversation_id per ChatPage mount — scopes uploaded files so the
+  // server can group them and we can pass the full set to every run. Lazy
+  // useState initializer keeps the id stable across re-renders.
+  const [conversationId] = useState(
+    () => `conv_${Math.random().toString(36).slice(2, 14)}`,
+  );
+  const [files, setFiles] = useState<FileMeta[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   // Load specialist packs (everything except 'router').
   useEffect(() => {
@@ -53,6 +63,41 @@ export function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
+  async function handleUpload(list: FileList) {
+    setUploading(true);
+    try {
+      const uploaded: FileMeta[] = [];
+      for (const f of Array.from(list)) {
+        try {
+          uploaded.push(await api.uploadFile(conversationId, f));
+        } catch (e) {
+          toast.error(`Upload failed for ${f.name}: ${(e as Error).message}`);
+        }
+      }
+      if (uploaded.length > 0) {
+        setFiles((prev) => [...prev, ...uploaded]);
+        toast.success(
+          uploaded.length === 1
+            ? `Uploaded ${uploaded[0].name}`
+            : `Uploaded ${uploaded.length} files`,
+        );
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteFile(file_id: string) {
+    const prev = files;
+    setFiles((p) => p.filter((f) => f.file_id !== file_id));
+    try {
+      await api.deleteFile(file_id);
+    } catch (e) {
+      toast.error(`Delete failed: ${(e as Error).message}`);
+      setFiles(prev);
+    }
+  }
+
   async function send() {
     const msg = input.trim();
     if (!msg || running) return;
@@ -64,7 +109,7 @@ export function ChatPage() {
 
     let started: RunSummary;
     try {
-      started = await api.startRun(msg, Array.from(allowed));
+      started = await api.startRun(msg, Array.from(allowed), files);
     } catch (e) {
       toast.error(`Failed to start run: ${(e as Error).message}`);
       setRunning(false);
@@ -136,28 +181,9 @@ export function ChatPage() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 h-[calc(100vh-7rem)]">
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_280px] gap-6 h-[calc(100vh-7rem)]">
       {/* Sidebar — orchestrator config */}
       <aside className="space-y-4 overflow-y-auto pb-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Sparkles className="size-4" />
-              Orchestrator
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>
-              One agent fronts every message. It reads the request, picks the
-              right specialist, and delegates.
-            </p>
-            <div className="flex items-center gap-2 text-xs">
-              <Badge variant="outline" className="font-mono">router</Badge>
-              <ClassificationBadge value="public" />
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -211,6 +237,7 @@ export function ChatPage() {
         )}
       </aside>
 
+
       {/* Main column — chat */}
       <section className="flex flex-col min-h-0">
         <ScrollArea className="flex-1 -mx-2 px-2">
@@ -257,6 +284,16 @@ export function ChatPage() {
           </div>
         </div>
       </section>
+
+      {/* Right sidebar — files in the conversation */}
+      <aside className="hidden lg:block min-h-0">
+        <FilesSidebar
+          files={files}
+          uploading={uploading}
+          onUpload={handleUpload}
+          onDelete={handleDeleteFile}
+        />
+      </aside>
     </div>
   );
 }
@@ -324,8 +361,8 @@ function TurnView({
       {/* Assistant bubble */}
       {finalText && (
         <div className="flex justify-start">
-          <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 text-sm whitespace-pre-wrap leading-relaxed">
-            {finalText}
+          <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
+            <Markdown>{finalText}</Markdown>
           </div>
         </div>
       )}

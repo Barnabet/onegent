@@ -81,8 +81,18 @@ class ToolCtx:
     audit: Optional[Callable[..., None]] = None
     # Orchestrator-only fields. Populated by the worker when the running pack
     # is a router; ignored otherwise. The subagent.run tool reads them.
+    # `allowed_packs` is the set of pre-defined specialist packs the router
+    # may spawn via `orchestrator.delegate`. Skills are drawn from the full
+    # on-disk catalog (no per-run skill allow-list) — the router is trusted
+    # to compose any skill into a sub-agent; what the router may invoke
+    # *itself* is constrained by the router pack's own `skills:` list and
+    # the tools those skills require.
     allowed_packs: Optional[List[str]] = None
     emit: Optional[Callable[[dict], None]] = None
+    # Conversation-scoped file attachments. Each entry is a metadata dict
+    # (file_id, name, size, mime, path, ...). Surfaced in the system prompt
+    # so every agent in the run knows which files are available on disk.
+    files: Optional[List[dict]] = None
 
 
 # ---------------------------------------------------------------------------

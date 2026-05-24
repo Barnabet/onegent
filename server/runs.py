@@ -69,6 +69,7 @@ def start_run(
     user_id: str = "webui",
     loop: Optional[asyncio.AbstractEventLoop] = None,
     allowed_packs: Optional[List[str]] = None,
+    files: Optional[List[dict]] = None,
 ) -> LiveRun:
     """Spawn a supervisor run on a background thread. Returns the LiveRun handle.
 
@@ -107,6 +108,7 @@ def start_run(
                 run_id=run_id,
                 timeout=300.0,
                 allowed_packs=allowed_packs,
+                files=files,
             )
             run.final_text = result.final_text
             run.stats = result.stats

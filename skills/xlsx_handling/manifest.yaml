@@ -1,13 +1,21 @@
-name: xlsx_analysis
+name: xlsx_handling
 version: 0.1.0
 owner: team-doc-ai
 
 requires_tools:
+  - xlsx.info
   - xlsx.read
-  - text.word_count
+  - xlsx.sql
+  - xlsx.write
+  - xlsx.edit_cells
+  - xlsx.format
+  - xlsx.convert
+  - xlsx.recalc
 
 classification: internal
 data_sources:
   - user_attachments
+
 permissions:
   - fs.read
+  - fs.write

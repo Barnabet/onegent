@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ClassificationBadge } from "@/components/ClassificationBadge";
+import { ROUTER_ONLY_TOOLS } from "@/lib/utils";
 import { JsonBlock } from "@/components/JsonBlock";
 import { toast } from "sonner";
 
@@ -20,7 +21,10 @@ export function ToolsPage() {
   const [detail, setDetail] = useState<ToolDetail | null>(null);
 
   useEffect(() => {
-    api.tools().then(setTools).catch((e) => toast.error(e.message));
+    api
+      .tools()
+      .then((all) => setTools(all.filter((t) => !ROUTER_ONLY_TOOLS.has(t.name))))
+      .catch((e) => toast.error(e.message));
   }, []);
 
   const filtered = tools.filter(

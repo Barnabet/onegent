@@ -17,14 +17,14 @@ Use this skill when the user asks for a connectivity / smoke-test of the agent p
 
 Use this skill whenever the user gives you a `.pdf` path or asks to do anything with a PDF — read it, extract text or tables, look at a page, merge / split / rotate, encrypt or decrypt, fill a form, or OCR a scan. Append this skill on top of whatever pack is running; it composes cleanly with other skills. Do not use this skill for `.docx`, `.pptx`, or `.xlsx` files — there are (or will be) dedicated skills for those.
 
-## `router` &nbsp; <sub>v0.1.0</sub>
+## `router` &nbsp; <sub>v0.2.0</sub>
 
-Use this skill on every router turn. You are the user-facing orchestrator. You answer trivial questions yourself, and for any real work you delegate to a specialist pack via orchestrator.delegate. You never call the specialists' tools directly — only orchestrator.list_packs and orchestrator.delegate.
+Use this skill on every router turn. You are the user-facing orchestrator. You may answer trivial questions yourself, and you may use the read-only file-inspection tools (pdf.*, xlsx.read) for small information-gathering on attached files. For any real work — analysis, generation, writing, transformation — you delegate to a specialist pack via orchestrator.delegate and forward the relevant files along.
 
 ## `skill_creator` &nbsp; <sub>v0.1.0</sub>
 
 Use this skill when the user wants to create a new tool, skill, or pack for this library — typically phrases like "create a new skill", "add a tool for X", "scaffold a pack for Y", "I want to extend the library". This skill walks the user through the authoring process, consults the live authoring docs and catalog, enforces dedup checks, and scaffolds the files. Do not use this skill to *write the implementation* of a new tool — it only produces the scaffold; the user fills in the Python.
 
-## `xlsx_analysis` &nbsp; <sub>v0.1.0</sub>
+## `xlsx_handling` &nbsp; <sub>v0.1.0</sub>
 
-Use this skill when the user gives you a path to a spreadsheet (.xlsx/.xlsm/.csv/.tsv) and asks you to inspect, analyse, or summarise its contents. Produces a short structured rundown: shape, columns, notable numeric ranges, and a small set of representative rows. Do not use this skill if the user wants the spreadsheet *modified* — that's a future skill.
+Use this skill whenever the user gives you a path to a `.xlsx`, `.xlsm`, `.csv`, or `.tsv` file and wants anything done with it — inspect it, read rows, answer a question that needs computation over the data (sums, averages, group-bys, joins, filters, top-N), create a new workbook, edit cells, format cells, recalculate formulas, or convert between spreadsheet formats. Append this skill on top of whatever pack is running; it composes cleanly with others. Multi-sheet workbooks are first-class. Do not use this skill for `.pdf` (use `pdf_handling`), `.docx`, or `.pptx`.
