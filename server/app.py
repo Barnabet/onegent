@@ -16,6 +16,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -265,6 +266,7 @@ async def start_run(body: StartRunBody) -> dict:
             loop=loop,
             history=history,
             files=files,
+            conversation_id=conv_id,
             on_done=on_done,
         )
     else:
@@ -280,6 +282,7 @@ async def start_run(body: StartRunBody) -> dict:
             allowed_packs=allowed,
             history=history,
             files=files,
+            conversation_id=conv_id,
             on_done=on_done,
         )
     return _run_to_dict(run)
@@ -388,6 +391,21 @@ def delete_file(file_id: str) -> dict:
     conv_store.detach_file(meta.conversation_id, file_id)
     files_store.delete(file_id)
     return {"ok": True}
+
+
+@app.get("/api/files/{file_id}/download")
+def download_file(file_id: str) -> FileResponse:
+    meta = files_store.get(file_id)
+    if meta is None:
+        raise HTTPException(404, f"File {file_id!r} not found")
+    path = Path(meta.path)
+    if not path.is_file():
+        raise HTTPException(410, f"File {file_id!r} no longer on disk")
+    return FileResponse(
+        path=str(path),
+        filename=meta.name,
+        media_type=meta.mime or "application/octet-stream",
+    )
 
 
 # ---------------------------------------------------------------------------

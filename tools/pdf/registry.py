@@ -1,6 +1,6 @@
 """Tool registrations for the `pdf` domain."""
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -22,17 +22,35 @@ class ExtractTextParams(BaseModel):
     path: str = Field(..., description="Path to a .pdf file.")
     pages: Optional[str] = Field(
         None,
-        description="1-based page spec, e.g. '1', '1-3', '1,3-5,8'. Omit for all pages.",
+        description="1-based page spec, e.g. '1', '1-3', '1,3-5,8'. Omit to use the document's first `max_pages` pages.",
     )
     preserve_layout: bool = Field(
         False,
         description="If true, pdfplumber preserves visual layout (whitespace, columns).",
     )
+    max_pages: int = Field(
+        5,
+        description=(
+            "Cap on the number of pages whose text is returned (default 5). "
+            "Applied after the `pages` spec — i.e. if you ask for pages '1-50' "
+            "you still get only the first 5 unless you raise this. The payload "
+            "reports `truncated: true` and the dropped pages so you can ask for "
+            "more in a follow-up call."
+        ),
+    )
 
 
 class ExtractTablesParams(BaseModel):
     path: str = Field(..., description="Path to a .pdf file.")
-    pages: Optional[str] = Field(None, description="1-based page spec; omit for all pages.")
+    pages: Optional[str] = Field(None, description="1-based page spec; omit to scan the document's first `max_pages` pages.")
+    max_pages: int = Field(
+        5,
+        description=(
+            "Cap on the number of pages scanned for tables (default 5). "
+            "Applied after the `pages` spec. The payload reports `truncated: true` "
+            "and the pages that were skipped."
+        ),
+    )
 
 
 class MergeParams(BaseModel):
@@ -96,6 +114,62 @@ class SeeParams(BaseModel):
         description="1-based page spec, e.g. '1', '1-5', '2,4'. Max 5 pages per call. Omit for the first page only.",
     )
     scale: float = Field(2.0, description="Render scale; 2.0 ≈ ~200dpi. Keep ≤ 3.0 to stay within model image limits.")
+
+
+class CreateParams(BaseModel):
+    output: str = Field(
+        ...,
+        description="Destination .pdf path. Must end in `.pdf`. Parent dirs are created.",
+    )
+    elements: List[Dict[str, Any]] = Field(
+        ...,
+        description=(
+            "Ordered list of document elements. Each item is an object with a "
+            "`type` field. Supported types: cover, title, heading, paragraph, "
+            "bullets, numbered, callout, quote, banner, kpi_row, card, columns, "
+            "badges, table, chart, diagram, timeline, shape, image, spacer, "
+            "hrule, page_break. See the card for the schema of each type. "
+            "Inline markup supported in any text field: <b>, <i>, <u>, "
+            "<sub>, <super>, <br/>, <font color='#rrggbb'>, "
+            "<link href='https://...'>."
+        ),
+    )
+    theme: Union[str, Dict[str, str]] = Field(
+        "default",
+        description=(
+            "Theme name (default, professional, modern, minimal, vibrant, "
+            "dark) or a custom object with `primary`/`secondary`/`accent`/"
+            "`text`/`muted`/`surface`/`border` hex colours and optional "
+            "`font`."
+        ),
+    )
+    page_size: str = Field(
+        "letter",
+        description="Page size: 'letter', 'A4', or 'legal'.",
+    )
+    margin: float = Field(
+        54.0,
+        description="Uniform page margin in points (default 54 = 0.75in).",
+    )
+    title: Optional[str] = Field(None, description="PDF metadata: document title.")
+    author: Optional[str] = Field(None, description="PDF metadata: author.")
+    subject: Optional[str] = Field(None, description="PDF metadata: subject.")
+    header: Optional[Union[str, Dict[str, str]]] = Field(
+        None,
+        description="Header content. String (centered) or object with `left`/`center`/`right`.",
+    )
+    footer: Optional[Union[str, Dict[str, str]]] = Field(
+        None,
+        description="Footer content. String (centered) or object with `left`/`center`/`right`.",
+    )
+    page_numbers: bool = Field(
+        False,
+        description="If true, draw 'Page N' in the footer-right of every page.",
+    )
+    overwrite: bool = Field(
+        False,
+        description="If true, replace the output file if it already exists.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +322,15 @@ def fill_form(params: FillFormParams, ctx: ToolCtx) -> ToolResult:
 )
 def see(params: SeeParams, ctx: ToolCtx) -> ToolResult:
     return impl.see(params, ctx)
+
+
+@tool(
+    name="pdf.create",
+    card="cards/create.md",
+    schema=CreateParams,
+    classification="internal",
+    owner=_OWNER,
+    tags=["pdf", "write", "create", "report"],
+)
+def create(params: CreateParams, ctx: ToolCtx) -> ToolResult:
+    return impl.create(params, ctx)

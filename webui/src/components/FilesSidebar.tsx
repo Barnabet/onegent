@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { FileMeta } from "@/lib/api";
+import { api, type FileMeta } from "@/lib/api";
 import {
   File as FileIcon,
   FileText,
@@ -14,6 +14,7 @@ import {
   Paperclip,
   Upload,
   X,
+  Download,
   Loader2,
 } from "lucide-react";
 
@@ -132,13 +133,24 @@ export function FilesSidebar({
                     {fmtSize(f.size)} · {f.mime || "unknown"}
                   </div>
                 </div>
-                <button
-                  onClick={() => onDelete(f.file_id)}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity"
-                  title="Remove"
-                >
-                  <X className="size-3.5" />
-                </button>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <a
+                    href={api.downloadFileUrl(f.file_id)}
+                    download={f.name}
+                    className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-accent"
+                    title={`Download ${f.name}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Download className="size-3.5" />
+                  </a>
+                  <button
+                    onClick={() => onDelete(f.file_id)}
+                    className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-accent"
+                    title="Remove"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
               </div>
             );
           })}

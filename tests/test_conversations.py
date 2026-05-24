@@ -137,6 +137,7 @@ def test_start_run_threads_history_and_files(monkeypatch):
         captured["history"] = kwargs.get("history")
         captured["files"] = kwargs.get("files")
         captured["allowed_packs"] = kwargs.get("allowed_packs")
+        captured["conversation_id"] = kwargs.get("conversation_id")
         return _StubRun()
 
     monkeypatch.setattr(app_mod.runs, "start_run", fake_start_run)
@@ -169,6 +170,9 @@ def test_start_run_threads_history_and_files(monkeypatch):
     # The conversation's attached file was forwarded.
     assert captured["files"] is not None and len(captured["files"]) == 1
     assert captured["files"][0]["file_id"] == meta.file_id
+    # The conversation_id is also forwarded so the runs layer can attach
+    # any agent-produced files to the right conversation.
+    assert captured["conversation_id"] == c.id
 
     # The new user turn was recorded immediately (assistant turn waits for
     # the on_done callback, which our stub never triggers).

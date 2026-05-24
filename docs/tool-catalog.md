@@ -3,7 +3,7 @@
 Generated from the live tool registry. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**33 tools** across **7 domains**.
+**32 tools** across **7 domains**.
 
 ## By domain
 
@@ -157,35 +157,37 @@ Three shapes are supported:
 1. **Pack** — `pack="credit_analyst"`. The specialist runs with the
    pack's own skills. Use when a specialist already matches the task.
 2. **Pack + extra skills** — `pack="credit_analyst", extra_skills=["pdf_handling"]`.
-   Splice extra skills (from `orchestrator.list_skills`) on top of the
-   pack's skills. Use when a specialist is *almost* right but needs one
-   more capability for this task.
+   Splice extra skills (from the composable-skills catalog in your
+   system prompt) on top of the pack's skills. Use when a specialist is
+   *almost* right but needs one more capability for this task.
 3. **Skills only** — `skills=["pdf_handling", "xlsx_handling"]`, no `pack`.
    Ad-hoc sub-agent composed from individual skills, running under the
    router's own model / classification / limits. Use when no specialist
    fits but a combination of skills will.
 
 ## When to use
-- The user's request maps to a single specialist pack from
-  `orchestrator.list_packs`. Pick it and delegate.
-- The user's request needs multiple specialists. Delegate to each one in
-  turn and combine the answers yourself.
+- The user's request maps to a single specialist pack from the
+  delegatable-packs catalog in your system prompt. Pick it and delegate.
 - The user's request needs a capability mix that no specialist provides.
-  Compose it from `orchestrator.list_skills` using `skills=[...]`.
+  Compose it from the composable-skills catalog using `skills=[...]`.
+- The user's request needs several skills working together on the SAME
+  task. Send one sub-agent with all the relevant skills — do not split
+  into multiple sub-agents unless the steps are genuinely independent
+  (different files / no data flowing between them).
 
 ## When NOT to use
 - For pure conversational replies ("hi", "what can you do?") — answer
   yourself. Do not delegate trivia.
 - To call a pack outside `allowed_packs` — the call fails with
-  `pack_not_allowed`. (Skills are not gated; pick any from
-  `orchestrator.list_skills`.)
+  `pack_not_allowed`. (Skills are not gated; pick any from the
+  composable-skills catalog.)
 
 ## Parameters
 | name | type | required | description |
 |---|---|---|---|
 | pack | string | one-of | Specialist pack name. Must be in `allowed_packs`. |
-| skills | string[] | one-of | Skills for an ad-hoc sub-agent (no pack). Pick from `orchestrator.list_skills`. |
-| extra_skills | string[] | no | Extra skills to add on top of `pack`. Pick from `orchestrator.list_skills`. Ignored without `pack`. |
+| skills | string[] | one-of | Skills for an ad-hoc sub-agent (no pack). Pick from the composable-skills catalog in the system prompt. |
+| extra_skills | string[] | no | Extra skills to add on top of `pack`. Pick from the composable-skills catalog. Ignored without `pack`. |
 | message | string | yes | Self-contained sub-task. Include all context — the sub-agent cannot see the parent conversation. |
 | files | string[] | no | Conversation `file_id`s to forward. Omit/`null` = all attachments (default). `[]` = none. Subset = only those. Unknown ids are dropped. |
 
@@ -221,122 +223,188 @@ Call: `orchestrator.delegate(skills=["pdf_handling", "xlsx_handling"], message="
 Returns: `{ok: true, data: {pack: null, skills: ["pdf_handling", "xlsx_handling"], final_text: "...", stats: {...}}}`
 
 ## See also
-- `orchestrator.list_packs` — see which specialist packs are available.
-- `orchestrator.list_skills` — see which skills you may compose.
-
-</details>
-
-#### `orchestrator.list_packs` &nbsp; <sub>v1 · public · owner: team-platform-ai</sub>
-
-<details><summary>card</summary>
-
----
-tool: orchestrator.list_packs
-version: 1
-owner: team-platform-ai
-classification: [public]
-tags: [routing, meta]
----
-
-# orchestrator.list_packs
-
-## Purpose
-List the specialist packs the router is allowed to delegate to. Returns
-each pack's name + one-line description so the model can pick the right
-one for a user request.
-
-## When to use
-- At the start of a router run, to see what specialists are available.
-- When the user asks a new question and you need to decide which
-  specialist (if any) should handle it.
-
-## When NOT to use
-- If you have already called this in the current turn — the list does not
-  change mid-run. Cache the answer.
-- For pure conversational replies that do not need a specialist.
-
-## Parameters
-(none)
-
-## Returns
-On success: `{ok: true, data: {packs: [{name, description, classification}, ...]}}`
-
-## Errors
-- `no_router_context` — this tool was called outside a router run
-  (no `allowed_packs` configured). Should not happen in practice.
-
-## Examples
-### Discovering specialists
-Call: `orchestrator.list_packs()`
-Returns: `{ok: true, data: {packs: [
-  {name: "credit_analyst", description: "Pilot pack for credit analysts...", classification: "confidential"},
-  {name: "hello", description: "Smoke-test pack...", classification: "public"}
-]}}`
-
-## See also
-- `orchestrator.delegate` — actually invoke a specialist with a sub-task.
-
-</details>
-
-#### `orchestrator.list_skills` &nbsp; <sub>v1 · public · owner: team-platform-ai</sub>
-
-<details><summary>card</summary>
-
----
-tool: orchestrator.list_skills
-version: 1
-owner: team-platform-ai
-classification: [public]
-tags: [routing, meta]
----
-
-# orchestrator.list_skills
-
-## Purpose
-List every skill installed on disk. These are the skills the orchestrator
-may compose into a sub-agent via `orchestrator.delegate` — either as
-`skills=[...]` (ad-hoc sub-agent) or `extra_skills=[...]` (added on top
-of a pack).
-
-This is **not** the same as the skills the orchestrator may invoke
-*itself*. The orchestrator's own callable skills are fixed by the router
-pack definition (`packs/router.yaml: skills:`) and are surfaced to the
-model as the tool list it already has access to.
-
-## When to use
-- Before composing a skills-only sub-agent, to see what's available.
-- When deciding whether to top up a `pack` delegation with `extra_skills`.
-
-## When NOT to use
-- If you have already called this in the current turn — the list does not
-  change mid-run. Cache the answer.
-
-## Parameters
-(none)
-
-## Returns
-On success: `{ok: true, data: {skills: [{name, description}, ...]}}`
-
-## Errors
-- `no_router_context` — this tool was called outside a router run.
-  Should not happen in practice.
-
-## Examples
-### Discovering composable skills
-Call: `orchestrator.list_skills()`
-Returns: `{ok: true, data: {skills: [
-  {name: "pdf_handling", description: "Read and inspect PDF files."},
-  {name: "xlsx_handling", description: "Inspect, query (SQL), read, write, edit, format, recalculate, and convert spreadsheets."},
-  {name: "router", description: "Routing rules for the orchestrator."}
-]}}`
-
-## See also
-- `orchestrator.delegate` — compose and invoke a sub-agent.
-- `orchestrator.list_packs` — see pre-defined specialist packs.
+- The **Delegatable packs** and **Composable skills** sections of your
+  system prompt list every pack and skill you may pass here.
 
 </details>
 
 ### `pdf`
+
+#### `pdf.create` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.create
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, create, report]
+---
+
+# pdf.create
+
+## Purpose
+Author a brand-new PDF from a structured list of elements. Handles
+covers, headings, paragraphs, tables (zebra / minimal / grid), bullets,
+numbered lists, callouts (info / tip / note / success / warning /
+danger), quotes, banners, KPI rows, cards, multi-column layouts,
+badges / pills, bar / line / pie charts, flow diagrams, timelines,
+images, raw shapes, horizontal rules, spacers, and explicit page
+breaks. Pick a theme (default, professional, modern, minimal, vibrant,
+dark) or pass a custom theme with `primary`/`secondary`/`accent`/
+`text`/`muted`/`surface`/`border` hex colours.
+
+Prefer this over shelling out to `reportlab` yourself: it already knows
+the styling, the page templates, and the Unicode gotchas (sub/super
+characters are auto-converted to `<sub>`/`<super>` tags so they don't
+render as black boxes).
+
+## When to use
+- The user asks for a PDF report, summary, presentation, memo, or
+  one-pager.
+- A skill needs to materialise a structured output (KPIs, tables,
+  charts, narrative sections) as a deliverable file.
+
+## When NOT to use
+- To modify an existing PDF: use `pdf.merge`, `pdf.split`, `pdf.rotate`,
+  `pdf.fill_form`, etc.
+- To "export" an Excel file as PDF: build the PDF from the *data* with
+  this tool, don't try to round-trip a `.xlsx`.
+- For raster output (PNG/JPG): not supported — render the PDF and use
+  `pdf.see` if you need page images.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| output | string | yes | Destination `.pdf` path. Must end in `.pdf`. |
+| elements | object[] | yes | Ordered list of element objects (see below). |
+| theme | string \| object | no | Theme name or custom palette. Default `"default"`. |
+| page_size | string | no | `"letter"` (default), `"A4"`, or `"legal"`. |
+| margin | float | no | Uniform page margin in points. Default `54` (= 0.75 inch). |
+| title | string | no | PDF metadata: title. |
+| author | string | no | PDF metadata: author. |
+| subject | string | no | PDF metadata: subject. |
+| header | string \| object | no | Page header. String → centred. Object → `{left, center, right}`. |
+| footer | string \| object | no | Page footer. Same shape as `header`. |
+| page_numbers | bool | no | If true, draw `Page N` in the footer-right of every page. |
+| overwrite | bool | no | If true, replace the output file if it already exists. |
+
+## Element types
+
+Each element is `{"type": "<name>", ...fields}`.
+
+| type | required fields | notable optional fields |
+|---|---|---|
+| `cover` | `title` | `subtitle`, `tagline`, `accent` |
+| `title` | `text` | `subtitle` |
+| `heading` | `text`, `level` (1/2/3) | — |
+| `paragraph` | `text` | `align` (`left`/`right`/`center`/`justify`), `style` (`body`/`lead`/`small`/`muted`) |
+| `bullets` | `items: [text, ...]` | `style` (`dot`/`dash`/`check`) |
+| `numbered` | `items: [text, ...]` | — |
+| `callout` | `text` | `variant` (`info`/`tip`/`note`/`success`/`warning`/`danger`), `title` |
+| `quote` | `text` | `attribution` |
+| `banner` | `text` | `subtitle`, `color` |
+| `kpi_row` | `items: [{label, value, delta?, color?}, ...]` | — |
+| `card` | — | `title`, `text`, `color`, `children: [element, ...]` |
+| `columns` | `columns: [[element, ...], ...]` | `gap` (points) |
+| `badges` | `items: [{text, color?}, ...]` | — |
+| `table` | `rows: [[cell, ...], ...]` | `header` (bool, default true), `style` (`zebra`/`minimal`/`grid`), `col_widths`, `aligns` |
+| `chart` | `kind` (`bar`/`line`/`pie`), `data`, `labels` | `series_names`, `title`, `height` |
+| `diagram` | `nodes: [{id, label, color?}], edges: [{from, to, label?}]` | `layout` (`horizontal`/`vertical`) |
+| `timeline` | `items: [{title, text?}, ...]` | — |
+| `shape` | `shape` (`rect`/`circle`/`line`/`arrow`) | `width`, `height`, `color`, `fill` |
+| `image` | `path` | `width`, `height`, `caption` |
+| `spacer` | — | `height` (points; default 12) |
+| `hrule` | — | `color` |
+| `page_break` | — | — |
+
+### Inline markup (any text field)
+- `<b>bold</b>`, `<i>italic</i>`, `<u>underline</u>`
+- `<sub>...</sub>`, `<super>...</super>` (Unicode sub/super are auto-converted)
+- `<br/>` for a line break
+- `<font color='#rrggbb'>...</font>` for inline colour
+- `<link href='https://...'>text</link>` for hyperlinks
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    output: "<absolute path>",
+    page_count: <int|null>,
+    size_bytes: <int>,
+    element_count: <int>,
+    theme: "<name>|custom",
+    page_size: "letter|A4|legal"
+  }
+}
+```
+
+## Errors
+- `invalid_input` — `output` does not end in `.pdf`, or `elements` is empty.
+- `output_exists` — destination already exists and `overwrite=false`.
+- `dependency_missing` — reportlab is not installed.
+- `create_failed` — the PDF build raised (the message includes the cause).
+
+## Examples
+
+### One-pager with KPIs and a table
+Call:
+```
+pdf.create(
+  output="/tmp/inventory-summary.pdf",
+  theme="professional",
+  page_numbers=true,
+  title="Retail Inventory Summary",
+  elements=[
+    {"type": "cover", "title": "Retail Inventory", "subtitle": "Q1 Summary", "tagline": "Generated from 01 Retail Inventory.xlsx"},
+    {"type": "heading", "level": 1, "text": "Key figures"},
+    {"type": "kpi_row", "items": [
+      {"label": "Products", "value": "1,000"},
+      {"label": "Categories", "value": "8"},
+      {"label": "Stock value (retail)", "value": "$3.42M", "color": "#10b981"},
+      {"label": "Low stock", "value": "149", "color": "#ef4444"}
+    ]},
+    {"type": "heading", "level": 2, "text": "Top 10 by retail value"},
+    {"type": "table", "style": "zebra", "rows": [
+      ["SKU", "Category", "On hand", "Retail value"],
+      ["A-001", "Apparel", "320", "$48,000"],
+      ["B-014", "Footwear", "210", "$41,200"]
+    ]}
+  ]
+)
+```
+
+### Chart and diagram
+Call:
+```
+pdf.create(
+  output="/tmp/architecture.pdf",
+  elements=[
+    {"type": "title", "text": "System architecture"},
+    {"type": "diagram", "layout": "horizontal", "nodes": [
+      {"id": "u", "label": "User"},
+      {"id": "a", "label": "API"},
+      {"id": "d", "label": "DB"}
+    ], "edges": [
+      {"from": "u", "to": "a"},
+      {"from": "a", "to": "d"}
+    ]},
+    {"type": "chart", "kind": "bar",
+     "labels": ["Jan", "Feb", "Mar"],
+     "data": [[120, 150, 180]],
+     "series_names": ["Signups"], "title": "Quarterly signups"}
+  ]
+)
+```
+
+## See also
+- `pdf.merge` — combine an existing cover with a body PDF.
+- `pdf.see` — render the resulting PDF as page images for verification.
+- `xlsx.sql` — compute the aggregates you'll put into the report before calling `pdf.create`.
+
+</details>
 
 #### `pdf.decrypt` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
 
@@ -482,7 +550,8 @@ Detect tables in a PDF and return their cell contents as 2-D arrays. Uses
 | name | type | required | description |
 |---|---|---|---|
 | path | string | yes | Path to a `.pdf` file. |
-| pages | string | no | 1-based page spec; omit for every page. |
+| pages | string | no | 1-based page spec; omit to scan the document's first `max_pages` pages. |
+| max_pages | int | no | Cap on the number of pages scanned for tables (default 5). Applied after the `pages` spec. When the cap drops pages, the payload includes `truncated: true` and `skipped_pages: [...]`. |
 
 ## Returns
 On success:
@@ -494,7 +563,13 @@ On success:
     tables: [
       {page: <1-based>, index: <1-based within page>, row_count, col_count, rows: [[cell, ...], ...]},
       ...
-    ]
+    ],
+    // present only when truncated:
+    requested_page_count: <int>,
+    returned_page_count: <int>,
+    skipped_pages: [<1-based>, ...],
+    truncated: true,
+    truncation_note: "Returned N of M requested pages..."
   }
 }
 ```
@@ -554,8 +629,9 @@ available (layout-aware), falls back to `pypdf` otherwise.
 | name | type | required | description |
 |---|---|---|---|
 | path | string | yes | Path to a `.pdf` file. |
-| pages | string | no | 1-based page spec, e.g. `"1"`, `"1-3"`, `"1,3-5,8"`. Omit for every page. |
+| pages | string | no | 1-based page spec, e.g. `"1"`, `"1-3"`, `"1,3-5,8"`. Omit to use the document's first `max_pages` pages. |
 | preserve_layout | bool | no | If true and pdfplumber is available, preserves columns/whitespace. Default false. |
+| max_pages | int | no | Cap on the number of pages returned (default 5). Applied after the `pages` spec, so asking for `"1-50"` still gives you only the first 5 unless you raise this. When the cap drops pages, the payload includes `truncated: true` and `skipped_pages: [...]`. |
 
 ## Returns
 On success:
@@ -566,7 +642,13 @@ On success:
     backend: "pdfplumber" | "pypdf",
     page_count: <int>,
     char_count: <int>,
-    pages: [{page: <1-based>, text: "..."}, ...]
+    pages: [{page: <1-based>, text: "..."}, ...],
+    // present only when truncated:
+    requested_page_count: <int>,
+    returned_page_count: <int>,
+    skipped_pages: [<1-based>, ...],
+    truncated: true,
+    truncation_note: "Returned N of M requested pages..."
   }
 }
 ```
@@ -2022,6 +2104,7 @@ a workbook at once.
 | sheet | string | no | Sheet name (xlsx only). Defaults to the first sheet. Ignored when `all_sheets=true`. |
 | has_header | bool | no | If true (default), the first row becomes `headers`; otherwise it stays in `rows`. |
 | all_sheets | bool | no | If true, return every sheet of the workbook under `sheets`. Xlsx only. |
+| max_rows | int | no | Cap on data rows returned per sheet (default 10). When the sheet has more rows, `rows` is truncated and `truncated: true` is set in the payload. Raise it if you genuinely need more rows; use `xlsx.sql` for aggregations. |
 
 ## Returns
 Single sheet:
@@ -2029,7 +2112,12 @@ Single sheet:
 {ok: true, data: {
   sheet: "<name>", sheet_names: [...],
   headers: [...] | null, rows: [[...], ...],
-  row_count: <int>, col_count: <int>
+  row_count: <int>,            # total data rows in the sheet
+  col_count: <int>,
+  // present only when truncated:
+  returned_row_count: <int>,   # how many rows are actually in `rows`
+  truncated: true,
+  truncation_note: "Showing first N of M data rows. ..."
 }}
 ```
 All sheets (`all_sheets=true`):
@@ -2383,7 +2471,7 @@ Call: `xlsx.write(output="/tmp/loans.csv", headers=["id","amount"], rows=[["L1",
 - **catalog** — `repo.read_catalog`, `repo.search_catalog`
 - **combine** — `pdf.merge`
 - **convert** — `xlsx.convert`
-- **create** — `xlsx.write`
+- **create** — `pdf.create`, `xlsx.write`
 - **dedup** — `repo.search_catalog`
 - **deterministic** — `text.extract_lines`, `text.word_count`
 - **diagnostic** — `core.echo`
@@ -2396,18 +2484,19 @@ Call: `xlsx.write(output="/tmp/loans.csv", headers=["id","amount"], rows=[["L1",
 - **forms** — `pdf.fill_form`, `pdf.form_fields`
 - **formula** — `xlsx.edit_cells`, `xlsx.recalc`
 - **internal-docs** — `docstore.fetch`
-- **meta** — `orchestrator.delegate`, `orchestrator.list_packs`, `orchestrator.list_skills`
+- **meta** — `orchestrator.delegate`
 - **metadata** — `pdf.read`, `xlsx.info`
 - **metrics** — `text.word_count`
 - **numeric** — `text.extract_lines`
 - **ocr** — `pdf.ocr`
 - **pack-authoring** — `repo.scaffold_pack`
-- **pdf** — `pdf.decrypt`, `pdf.encrypt`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.fill_form`, `pdf.form_fields`, `pdf.merge`, `pdf.ocr`, `pdf.read`, `pdf.rotate`, `pdf.see`, `pdf.split`
+- **pdf** — `pdf.create`, `pdf.decrypt`, `pdf.encrypt`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.fill_form`, `pdf.form_fields`, `pdf.merge`, `pdf.ocr`, `pdf.read`, `pdf.rotate`, `pdf.see`, `pdf.split`
 - **query** — `xlsx.sql`
 - **read** — `docstore.fetch`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.form_fields`, `pdf.ocr`, `pdf.read`, `pdf.see`, `repo.read_catalog`, `repo.read_doc`, `xlsx.info`, `xlsx.read`, `xlsx.sql`
 - **recalc** — `xlsx.recalc`
 - **reference** — `repo.read_catalog`, `repo.read_doc`
-- **routing** — `orchestrator.delegate`, `orchestrator.list_packs`, `orchestrator.list_skills`
+- **report** — `pdf.create`
+- **routing** — `orchestrator.delegate`
 - **scaffold** — `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
 - **search** — `repo.search_catalog`
 - **security** — `pdf.decrypt`, `pdf.encrypt`
@@ -2422,4 +2511,4 @@ Call: `xlsx.write(output="/tmp/loans.csv", headers=["id","amount"], rows=[["L1",
 - **tool-authoring** — `repo.scaffold_tool`
 - **transform** — `pdf.rotate`
 - **vision** — `pdf.see`
-- **write** — `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`, `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.recalc`, `xlsx.write`
+- **write** — `pdf.create`, `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`, `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.recalc`, `xlsx.write`

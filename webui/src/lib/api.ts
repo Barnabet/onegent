@@ -86,6 +86,13 @@ export type RunEvent = {
   stats?: Record<string, unknown>;
   // Set by orchestrator.delegate to mark events that came from a sub-agent.
   subagent_of?: string;
+  // file_created events — emitted whenever a tool writes a file. `file`
+  // is the registered FileMeta; `tool_name`/`path` describe its origin.
+  file?: FileMeta;
+  path?: string;
+  tool_name?: string;
+  conversation_id?: string | null;
+  error?: string;
 };
 
 export type RunDetail = RunSummary & { events: RunEvent[] };
@@ -232,6 +239,8 @@ export const api = {
     const r = await fetch(`/api/files/${encodeURIComponent(file_id)}`, { method: "DELETE" });
     if (!r.ok) throw new Error(`${r.status} ${r.statusText} on /api/files/${file_id}`);
   },
+  downloadFileUrl: (file_id: string) =>
+    `/api/files/${encodeURIComponent(file_id)}/download`,
 
   conversations: () => getJSON<ConversationSummary[]>("/api/conversations"),
   conversation: (id: string) =>

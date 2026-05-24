@@ -30,7 +30,8 @@ Detect tables in a PDF and return their cell contents as 2-D arrays. Uses
 | name | type | required | description |
 |---|---|---|---|
 | path | string | yes | Path to a `.pdf` file. |
-| pages | string | no | 1-based page spec; omit for every page. |
+| pages | string | no | 1-based page spec; omit to scan the document's first `max_pages` pages. |
+| max_pages | int | no | Cap on the number of pages scanned for tables (default 5). Applied after the `pages` spec. When the cap drops pages, the payload includes `truncated: true` and `skipped_pages: [...]`. |
 
 ## Returns
 On success:
@@ -42,7 +43,13 @@ On success:
     tables: [
       {page: <1-based>, index: <1-based within page>, row_count, col_count, rows: [[cell, ...], ...]},
       ...
-    ]
+    ],
+    // present only when truncated:
+    requested_page_count: <int>,
+    returned_page_count: <int>,
+    skipped_pages: [<1-based>, ...],
+    truncated: true,
+    truncation_note: "Returned N of M requested pages..."
   }
 }
 ```

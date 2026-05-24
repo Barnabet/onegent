@@ -36,13 +36,15 @@ behind the **More** dropdown in the header.
 ### How the chat works
 
 The user never picks a pack. Every message goes to the **router** pack —
-a meta-agent whose tools are `orchestrator.list_packs`,
-`orchestrator.list_skills`, and `orchestrator.delegate`. The router
-reads the message, decides whether it needs a specialist, and spawns a
-sub-agent in one of three shapes: a pack, a pack plus extra skills, or
-an ad-hoc combo of skills with no pack. Sub-agent events are forwarded
-to the UI tagged with `subagent_of: <label>` and shown indented under
-the parent `delegate` call.
+a meta-agent whose only routing tool is `orchestrator.delegate`. The
+router's system prompt inlines the catalog of delegatable packs and the
+catalog of composable skills, so the router can pick a target natively
+without any extra tool calls. It reads the message, decides whether it
+needs a specialist, and spawns a sub-agent in one of three shapes: a
+pack, a pack plus extra skills, or an ad-hoc combo of skills with no
+pack. Sub-agent events are forwarded to the UI tagged with
+`subagent_of: <label>` and shown indented under the parent `delegate`
+call.
 
 Conversations are server-side and persisted (one JSON per conversation
 under `conversations/`). Each `POST /api/runs` carries a

@@ -37,6 +37,10 @@ class WorkerJob:
     # ({file_id, name, size, mime, path, ...}). Propagated to every agent
     # via ToolCtx.files; the sub-agent loop surfaces it in the system prompt.
     files: Optional[List[dict]] = None
+    # Conversation id this run belongs to. Used to tag `file_created` events
+    # so the parent process can attach agent-produced output files to the
+    # right conversation. None for non-conversation runs (e.g. evals).
+    conversation_id: Optional[str] = None
 
 
 def worker_main(conn: Connection, job: WorkerJob) -> None:
@@ -86,6 +90,7 @@ def _run(conn: Connection, job: WorkerJob) -> None:
         allowed_packs=job.allowed_packs,
         emit=emit,
         files=job.files,
+        conversation_id=job.conversation_id,
     )
 
     try:

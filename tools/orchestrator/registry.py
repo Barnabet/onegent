@@ -8,14 +8,6 @@ from runtime.tool_registry import tool, ToolCtx, ToolResult
 from . import impl
 
 
-class ListPacksParams(BaseModel):
-    pass
-
-
-class ListSkillsParams(BaseModel):
-    pass
-
-
 class DelegateParams(BaseModel):
     pack: Optional[str] = Field(
         default=None,
@@ -29,7 +21,7 @@ class DelegateParams(BaseModel):
         default=None,
         description=(
             "Skills to bind on an ad-hoc sub-agent when no `pack` is given. "
-            "Picked from `orchestrator.list_skills` (the full on-disk catalog). "
+            "Picked from the composable-skills catalog in the system prompt. "
             "Exactly one of `pack` or `skills` must be set."
         ),
     )
@@ -37,9 +29,9 @@ class DelegateParams(BaseModel):
         default=None,
         description=(
             "Optional skills to splice on top of the chosen `pack`'s own "
-            "skill list. Picked from `orchestrator.list_skills`. Ignored "
-            "when `pack` is omitted (use `skills` instead). Skills already "
-            "in the pack are deduplicated."
+            "skill list. Picked from the composable-skills catalog. "
+            "Ignored when `pack` is omitted (use `skills` instead). "
+            "Skills already in the pack are deduplicated."
         ),
     )
     message: str = Field(
@@ -58,30 +50,6 @@ class DelegateParams(BaseModel):
             "those. Unknown ids are ignored."
         ),
     )
-
-
-@tool(
-    name="orchestrator.list_packs",
-    card="cards/list_packs.md",
-    schema=ListPacksParams,
-    classification="public",
-    owner="team-platform-ai",
-    tags=["routing", "meta"],
-)
-def list_packs(params: ListPacksParams, ctx: ToolCtx) -> ToolResult:
-    return impl.list_packs(params, ctx)
-
-
-@tool(
-    name="orchestrator.list_skills",
-    card="cards/list_skills.md",
-    schema=ListSkillsParams,
-    classification="public",
-    owner="team-platform-ai",
-    tags=["routing", "meta"],
-)
-def list_skills(params: ListSkillsParams, ctx: ToolCtx) -> ToolResult:
-    return impl.list_skills(params, ctx)
 
 
 @tool(

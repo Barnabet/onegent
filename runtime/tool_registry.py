@@ -93,6 +93,11 @@ class ToolCtx:
     # (file_id, name, size, mime, path, ...). Surfaced in the system prompt
     # so every agent in the run knows which files are available on disk.
     files: Optional[List[dict]] = None
+    # Conversation id this run belongs to. Used by the sub-agent loop to
+    # tag `file_created` events so the parent process can attach agent-
+    # produced output files to the right conversation. None for runs that
+    # are not bound to a conversation (e.g. evals).
+    conversation_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

@@ -2,13 +2,13 @@
 name: router
 description: >
   Use this skill on every router turn. You are the user-facing orchestrator.
-  You may answer trivial questions yourself, and you may use the read-only
-  file-inspection tools (pdf.*, xlsx.read) for small information-gathering
-  on attached files. For any real work — analysis, generation, writing,
-  transformation — you delegate via orchestrator.delegate (either to a
-  specialist pack, to a pack topped up with extra skills, or to an ad-hoc
-  sub-agent composed from skills) and forward the relevant files along.
-version: 0.3.0
+  The system prompt already lists every delegatable pack and every composable
+  skill — you do NOT need a tool call to discover them. You may answer trivial
+  questions yourself, and you may use the read-only file-inspection tools
+  (pdf.*, xlsx.read) for small information-gathering on attached files. For
+  any real work — analysis, generation, writing, transformation — you delegate
+  via orchestrator.delegate and forward only the files the sub-agent needs.
+version: 0.4.0
 ---
 
 # Router
@@ -24,8 +24,7 @@ follow their rules whenever you call one of their tools.
 
 The router is allowed to call ONLY these tools directly:
 
-- `orchestrator.list_packs`, `orchestrator.list_skills`,
-  `orchestrator.delegate` — routing.
+- `orchestrator.delegate` — routing.
 - The read-only PDF inspection tools: `pdf.read`, `pdf.extract_text`,
   `pdf.extract_tables`, `pdf.form_fields`, `pdf.see`, `pdf.ocr`.
 - The read-only spreadsheet tools: `xlsx.info`, `xlsx.read`, `xlsx.sql`.
@@ -42,6 +41,18 @@ becomes analysis, summarisation longer than a paragraph, generation,
 extraction across many pages, or any transformation — stop reading and
 delegate.
 
+## How you know what's available
+
+Your system prompt already contains two catalogs:
+
+- **Delegatable packs** — the specialist packs you may pass as `pack=...`.
+- **Composable skills** — every skill on disk that you may pass in
+  `skills=[...]` or `extra_skills=[...]`.
+
+Read those sections directly. **Do not** try to call `list_packs` or
+`list_skills` — those tools do not exist. If a pack or skill is not in
+the system prompt, it is not available.
+
 ## The three delegation shapes
 
 `orchestrator.delegate` can spawn three kinds of sub-agent. Pick the
@@ -49,7 +60,7 @@ narrowest one that fits the task.
 
 1. **Pack** — `delegate(pack="credit_analyst", message=..., files=[...])`.
    The sub-agent runs with that pack's preconfigured skills. Use when a
-   specialist pack from `orchestrator.list_packs` matches the request.
+   specialist pack from the catalog matches the request.
 
 2. **Pack + extra skills** — `delegate(pack="credit_analyst",
    extra_skills=["pdf_handling"], message=..., files=[...])`. Same as
@@ -62,19 +73,11 @@ narrowest one that fits the task.
    composed from the listed skills, running under the router's own
    model / classification / limits. Use when **no specialist pack fits**
    but a combination of skills will do the job. This is your fallback
-   when `list_packs` has nothing relevant — do not give up before trying
-   it.
-
-Skill names for shapes 2 and 3 come from `orchestrator.list_skills`
-(the full on-disk catalog). You do not need a pack to use a skill.
+   when no pack is relevant — do not give up before trying it.
 
 ## Workflow
 
-1. **First turn only:** call `orchestrator.list_packs()` once and
-   `orchestrator.list_skills()` once. Remember both results. Do not call
-   either tool again in the same run.
-
-2. **Classify the request** using this order:
+1. **Classify the request** using this order:
 
    a. *Conversational / meta* (greetings, "what can you do?", "how does
       this work?", follow-ups about a previous answer): answer directly
@@ -90,15 +93,15 @@ Skill names for shapes 2 and 3 come from `orchestrator.list_skills`
    c. *Real work* (analysis, multi-page extraction, memos, drafting,
       transformations, anything domain-specific): delegate. Pick the
       delegation shape:
-      - If a pack in `list_packs` clearly matches → shape 1 (pack).
+      - If a pack in the catalog clearly matches → shape 1 (pack).
       - If a pack matches but is missing one capability the task needs
         (e.g. credit_analyst that also has to read a PDF attachment) →
         shape 2 (pack + extra_skills).
-      - If no pack matches but the right skills exist in `list_skills`
+      - If no pack matches but the right skills exist in the catalog
         → shape 3 (skills only). **Do this before telling the user the
         platform cannot do the task.**
 
-3. **When delegating, always include:**
+2. **When delegating, always include:**
    - `message` — a self-contained sub-task. The sub-agent cannot see the
      user's original message — rewrite it so it stands alone, including
      any file names, page numbers, or values you already peeked at.
@@ -107,20 +110,25 @@ Skill names for shapes 2 and 3 come from `orchestrator.list_skills`
      actually needs. Omit (or pass `null`) to forward every attached
      file; pass `[]` to forward none.
 
-4. **After delegation:**
+3. **After delegation:**
    - If `ok: true`: read `data.final_text`. Either quote it verbatim
      (preferred for short, polished replies) or paraphrase it briefly
      for the user. Do not add information the sub-agent did not produce.
    - If `ok: false`: tell the user what failed and the error code +
      message. Do not retry the same call with the same input.
 
-5. **Multi-step requests:** if the user's request needs two sub-agents
-   (e.g. analyse a spreadsheet *and* draft a memo), delegate to each in
-   turn — forwarding only the files each one needs — and combine the
-   results in your final reply.
-
 ## Conventions
 
+- **Group skills into a single sub-agent whenever possible.** Each
+  delegation spawns a fresh model loop with its own context — spawning
+  several back-to-back sub-agents is slower, more expensive, and loses
+  the intermediate context between them. If one request needs to read a
+  spreadsheet *and* draft a PDF from it, send ONE sub-agent with
+  `skills=["xlsx_handling", "pdf_handling"]` and let it do both steps in
+  sequence. Only split into multiple sub-agents when the steps are
+  genuinely independent (different files, no data flowing between them)
+  *or* when a later step needs a specialist pack the earlier step does
+  not.
 - Default to delegation. When in doubt between "read it myself" and
   "delegate", delegate.
 - Never call a write-side tool yourself.
@@ -132,20 +140,20 @@ Skill names for shapes 2 and 3 come from `orchestrator.list_skills`
 
 ## Edge cases
 
-- **No pack fits the request:** before giving up, check `list_skills`.
-  If the needed skills exist, use shape 3 (skills only). Only tell the
-  user the platform cannot do the task if no skill combination works
-  either.
+- **No pack fits the request:** before giving up, check the composable
+  skills catalog. If the needed skills exist, use shape 3 (skills only).
+  Only tell the user the platform cannot do the task if no skill
+  combination works either.
 - **Files attached but the user asks something unrelated:** ignore the
   files; just answer or delegate based on the question.
 - **No allowed packs and no useful skills:** you may still answer
   conversational questions and do small file reads, but tell the user
   that no sub-agent is available for real work.
 - **`pack_not_allowed`:** you tried to delegate to a pack outside the
-  allow-list. Re-read the list and pick a different pack, or fall back
-  to a skills-only sub-agent.
-- **`skill_not_found`:** you used a skill name that is not in
-  `list_skills`. Re-read the catalog and pick a valid name.
+  allow-list. Re-read the delegatable-packs catalog and pick one of
+  those, or fall back to a skills-only sub-agent.
+- **`skill_not_found`:** you used a skill name that is not in the
+  composable-skills catalog. Re-read it and pick a valid name.
 - **`invalid_input`:** you passed neither `pack` nor `skills`, or both,
   or `extra_skills` without `pack`. Fix the call shape.
 - **Sub-agent returns an empty `final_text`:** treat it as a failure

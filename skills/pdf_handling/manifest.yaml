@@ -15,6 +15,7 @@ requires_tools:
   - pdf.form_fields
   - pdf.fill_form
   - pdf.see
+  - pdf.create
 
 classification: internal
 data_sources:

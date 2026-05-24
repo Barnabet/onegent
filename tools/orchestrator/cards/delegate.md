@@ -18,35 +18,37 @@ Three shapes are supported:
 1. **Pack** — `pack="credit_analyst"`. The specialist runs with the
    pack's own skills. Use when a specialist already matches the task.
 2. **Pack + extra skills** — `pack="credit_analyst", extra_skills=["pdf_handling"]`.
-   Splice extra skills (from `orchestrator.list_skills`) on top of the
-   pack's skills. Use when a specialist is *almost* right but needs one
-   more capability for this task.
+   Splice extra skills (from the composable-skills catalog in your
+   system prompt) on top of the pack's skills. Use when a specialist is
+   *almost* right but needs one more capability for this task.
 3. **Skills only** — `skills=["pdf_handling", "xlsx_handling"]`, no `pack`.
    Ad-hoc sub-agent composed from individual skills, running under the
    router's own model / classification / limits. Use when no specialist
    fits but a combination of skills will.
 
 ## When to use
-- The user's request maps to a single specialist pack from
-  `orchestrator.list_packs`. Pick it and delegate.
-- The user's request needs multiple specialists. Delegate to each one in
-  turn and combine the answers yourself.
+- The user's request maps to a single specialist pack from the
+  delegatable-packs catalog in your system prompt. Pick it and delegate.
 - The user's request needs a capability mix that no specialist provides.
-  Compose it from `orchestrator.list_skills` using `skills=[...]`.
+  Compose it from the composable-skills catalog using `skills=[...]`.
+- The user's request needs several skills working together on the SAME
+  task. Send one sub-agent with all the relevant skills — do not split
+  into multiple sub-agents unless the steps are genuinely independent
+  (different files / no data flowing between them).
 
 ## When NOT to use
 - For pure conversational replies ("hi", "what can you do?") — answer
   yourself. Do not delegate trivia.
 - To call a pack outside `allowed_packs` — the call fails with
-  `pack_not_allowed`. (Skills are not gated; pick any from
-  `orchestrator.list_skills`.)
+  `pack_not_allowed`. (Skills are not gated; pick any from the
+  composable-skills catalog.)
 
 ## Parameters
 | name | type | required | description |
 |---|---|---|---|
 | pack | string | one-of | Specialist pack name. Must be in `allowed_packs`. |
-| skills | string[] | one-of | Skills for an ad-hoc sub-agent (no pack). Pick from `orchestrator.list_skills`. |
-| extra_skills | string[] | no | Extra skills to add on top of `pack`. Pick from `orchestrator.list_skills`. Ignored without `pack`. |
+| skills | string[] | one-of | Skills for an ad-hoc sub-agent (no pack). Pick from the composable-skills catalog in the system prompt. |
+| extra_skills | string[] | no | Extra skills to add on top of `pack`. Pick from the composable-skills catalog. Ignored without `pack`. |
 | message | string | yes | Self-contained sub-task. Include all context — the sub-agent cannot see the parent conversation. |
 | files | string[] | no | Conversation `file_id`s to forward. Omit/`null` = all attachments (default). `[]` = none. Subset = only those. Unknown ids are dropped. |
 
@@ -82,5 +84,5 @@ Call: `orchestrator.delegate(skills=["pdf_handling", "xlsx_handling"], message="
 Returns: `{ok: true, data: {pack: null, skills: ["pdf_handling", "xlsx_handling"], final_text: "...", stats: {...}}}`
 
 ## See also
-- `orchestrator.list_packs` — see which specialist packs are available.
-- `orchestrator.list_skills` — see which skills you may compose.
+- The **Delegatable packs** and **Composable skills** sections of your
+  system prompt list every pack and skill you may pass here.

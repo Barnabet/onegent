@@ -13,3 +13,4 @@ python-multipart>=0.0.9,<1
 pypdf>=5.0,<7
 pdfplumber>=0.11,<1
 pypdfium2>=4.0,<6
+reportlab>=4.0,<5  # pdf.create — author PDFs from scratch

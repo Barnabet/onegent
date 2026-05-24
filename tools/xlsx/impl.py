@@ -141,10 +141,11 @@ def _read_xlsx(path: Path, params) -> ToolResult:
     except Exception as e:
         return _err("unsupported_format", f"Failed to open as xlsx: {e}")
 
+    max_rows = getattr(params, "max_rows", None)
     if params.all_sheets:
         sheets_out = []
         for sheet_name in wb.sheetnames:
-            sheets_out.append(_dump_sheet(wb[sheet_name], sheet_name, params.has_header))
+            sheets_out.append(_dump_sheet(wb[sheet_name], sheet_name, params.has_header, max_rows))
         return ToolResult(ok=True, data={
             "sheets": sheets_out,
             "sheet_names": list(wb.sheetnames),
@@ -156,12 +157,12 @@ def _read_xlsx(path: Path, params) -> ToolResult:
             "sheet_not_found",
             f"Sheet {sheet_name!r} not in workbook. Available: {wb.sheetnames}.",
         )
-    payload = _dump_sheet(wb[sheet_name], sheet_name, params.has_header)
+    payload = _dump_sheet(wb[sheet_name], sheet_name, params.has_header, max_rows)
     payload["sheet_names"] = list(wb.sheetnames)
     return ToolResult(ok=True, data=payload)
 
 
-def _dump_sheet(ws, sheet_name: str, has_header: bool) -> dict:
+def _dump_sheet(ws, sheet_name: str, has_header: bool, max_rows: Optional[int] = None) -> dict:
     rows: List[List[Any]] = []
     for row in ws.iter_rows(values_only=True):
         rows.append([_jsonable(v) for v in row])
@@ -171,13 +172,28 @@ def _dump_sheet(ws, sheet_name: str, has_header: bool) -> dict:
     if has_header and rows:
         headers = rows[0]
         data_rows = rows[1:]
-    return {
+
+    total = len(data_rows)
+    truncated = False
+    if max_rows is not None and max_rows >= 0 and total > max_rows:
+        data_rows = data_rows[:max_rows]
+        truncated = True
+
+    payload = {
         "sheet": sheet_name,
         "headers": headers,
         "rows": data_rows,
-        "row_count": len(data_rows),
+        "row_count": total,
         "col_count": len(headers) if headers is not None else (len(rows[0]) if rows else 0),
     }
+    if truncated:
+        payload["returned_row_count"] = len(data_rows)
+        payload["truncated"] = True
+        payload["truncation_note"] = (
+            f"Showing first {len(data_rows)} of {total} data rows. "
+            "Raise `max_rows` to see more, or use xlsx.sql for aggregations."
+        )
+    return payload
 
 
 def _read_delimited(path: Path, params) -> ToolResult:
@@ -193,14 +209,30 @@ def _read_delimited(path: Path, params) -> ToolResult:
     if params.has_header and rows:
         headers = rows[0]
         data_rows = rows[1:]
-    return ToolResult(ok=True, data={
+
+    total = len(data_rows)
+    truncated = False
+    max_rows = getattr(params, "max_rows", None)
+    if max_rows is not None and max_rows >= 0 and total > max_rows:
+        data_rows = data_rows[:max_rows]
+        truncated = True
+
+    payload = {
         "sheet": path.stem,
         "headers": headers,
         "rows": data_rows,
-        "row_count": len(data_rows),
+        "row_count": total,
         "col_count": len(headers) if headers is not None else (len(rows[0]) if rows else 0),
         "sheet_names": [path.stem],
-    })
+    }
+    if truncated:
+        payload["returned_row_count"] = len(data_rows)
+        payload["truncated"] = True
+        payload["truncation_note"] = (
+            f"Showing first {len(data_rows)} of {total} data rows. "
+            "Raise `max_rows` to see more, or use xlsx.sql for aggregations."
+        )
+    return ToolResult(ok=True, data=payload)
 
 
 # ---------------------------------------------------------------------------

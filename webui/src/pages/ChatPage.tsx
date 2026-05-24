@@ -248,6 +248,21 @@ export function ChatPage() {
           refreshConversations();
           return;
         }
+        // Agent created a file → splice the new FileMeta into the sidebar
+        // immediately (the server has already attached it server-side).
+        if (data?.type === "file_created" && data.file && activeId) {
+          const newFile = data.file as FileMeta;
+          setActiveDetail((p) => {
+            if (!p || p.id !== activeId) return p;
+            if (p.file_ids.includes(newFile.file_id)) return p;
+            return {
+              ...p,
+              file_ids: [...p.file_ids, newFile.file_id],
+              files: [...p.files, newFile],
+            };
+          });
+          toast.success(`Agent created ${newFile.name}`);
+        }
         setTurns((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -259,7 +274,7 @@ export function ChatPage() {
       }
     };
 
-    ["message", "tool_call", "tool_result", "model_text", "error"].forEach(
+    ["message", "tool_call", "tool_result", "model_text", "file_created", "error"].forEach(
       (type) => es.addEventListener(type, handle as EventListener),
     );
     es.addEventListener("done", handle as EventListener);

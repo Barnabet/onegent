@@ -16,7 +16,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Set
 
+from pathlib import Path
+
 from orchestrator import supervisor
+from runtime import worker_proto
+from server import conversations as conv_store
+from server import files as files_store
 
 
 @dataclass
@@ -52,6 +57,28 @@ def all_runs() -> List[LiveRun]:
         return list(_RUNS.values())
 
 
+def _materialise_file_created(ev: dict, fallback_conv_id: Optional[str]) -> dict:
+    """Adopt the on-disk path emitted by a tool as a conversation file.
+
+    On success, returns an event enriched with `file` (the FileMeta dict).
+    On failure, returns the event with `error` set so the UI can surface it
+    without breaking the stream.
+    """
+    path = ev.get("path") or ""
+    conv_id = ev.get("conversation_id") or fallback_conv_id
+    if not path or not conv_id:
+        return {**ev, "error": "missing path or conversation_id"}
+    src = Path(path)
+    if not src.is_file():
+        return {**ev, "error": f"path no longer exists: {path}"}
+    try:
+        meta = files_store.register_existing(conv_id, src)
+        conv_store.attach_file(conv_id, meta.file_id)
+    except Exception as e:
+        return {**ev, "error": f"failed to register: {e}"}
+    return {**ev, "file": files_store.to_dict(meta)}
+
+
 def _push_event_to_subscribers(run: LiveRun, event: dict) -> None:
     """Called from the worker thread. Schedules queue.put on the asyncio loop."""
     if run.loop is None:
@@ -71,6 +98,7 @@ def start_run(
     allowed_packs: Optional[List[str]] = None,
     history: Optional[List[dict]] = None,
     files: Optional[List[dict]] = None,
+    conversation_id: Optional[str] = None,
     on_done: Optional[Callable[["LiveRun"], None]] = None,
 ) -> LiveRun:
     """Spawn a supervisor run on a background thread. Returns the LiveRun handle.
@@ -97,6 +125,11 @@ def start_run(
         _RUNS[run_id] = run
 
     def on_event(ev: dict) -> None:
+        # Intercept agent-produced files: register them with the file store,
+        # attach them to the conversation, and rewrite the event with the
+        # full FileMeta so the UI can render it like a normal upload.
+        if ev.get("type") == worker_proto.EV_FILE_CREATED:
+            ev = _materialise_file_created(ev, fallback_conv_id=conversation_id)
         run.events.append(ev)
         _push_event_to_subscribers(run, ev)
 
@@ -112,6 +145,7 @@ def start_run(
                 allowed_packs=allowed_packs,
                 history=history,
                 files=files,
+                conversation_id=conversation_id,
             )
             run.final_text = result.final_text
             run.stats = result.stats

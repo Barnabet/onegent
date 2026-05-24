@@ -3,10 +3,12 @@ name: pdf_handling
 description: >
   Use this skill whenever the user gives you a `.pdf` path or asks to do
   anything with a PDF — read it, extract text or tables, look at a page,
-  merge / split / rotate, encrypt or decrypt, fill a form, or OCR a scan.
-  Append this skill on top of whatever pack is running; it composes cleanly
-  with other skills. Do not use this skill for `.docx`, `.pptx`, or `.xlsx`
-  files — there are (or will be) dedicated skills for those.
+  merge / split / rotate, encrypt or decrypt, fill a form, OCR a scan, or
+  **author a brand-new PDF report / summary / one-pager from structured
+  data** (use `pdf.create`). Append this skill on top of whatever pack is
+  running; it composes cleanly with other skills. Do not use this skill
+  for `.docx`, `.pptx`, or `.xlsx` files — there are (or will be)
+  dedicated skills for those.
 version: 0.1.0
 ---
 
@@ -24,6 +26,8 @@ to read, transform, inspect, or fill it. Typical triggers:
 - "This is a scan — pull the text out."
 - "Fill the W-9 with my details."
 - "Strip the password from this PDF."
+- "Make me a PDF presenting / summarising this data."
+- "Generate a one-pager / report / memo as a PDF."
 
 ## Workflow
 
@@ -44,6 +48,7 @@ table; each entry maps to a single tool call.
 | Remove password | `pdf.decrypt(path=..., password=..., output=...)` |
 | Inspect a form's fields | `pdf.form_fields(path=...)` |
 | Fill a form | `pdf.form_fields` first, then `pdf.fill_form(values={...}, output=...)` |
+| **Author a brand-new PDF** (report, summary, presentation) | `pdf.create(output=..., elements=[...])` |
 
 ### The standard sequence for "tell me about this PDF"
 
@@ -68,6 +73,47 @@ table; each entry maps to a single tool call.
 - After the call, the images are attached to your next turn automatically.
   Reference them ("looking at page 1 of the rendered images, the chart …")
   rather than re-emitting them.
+
+### Authoring a new PDF — `pdf.create`
+
+This is the right tool whenever the user wants a PDF *produced* (a
+report, summary, presentation, one-pager, memo, KPI dashboard, etc.).
+**Do not refuse the request and do not fall back to writing a `.xlsx`
+"the user can export from Excel"** — `pdf.create` exists exactly so you
+can deliver the PDF directly.
+
+1. **Gather the data first.** If the source is a spreadsheet, use
+   `xlsx.sql` to pre-aggregate the numbers you want to show (totals,
+   top-N, breakdowns); don't dump raw rows into the PDF. If the source
+   is another PDF or text, use `pdf.extract_text` / `extract_tables`.
+2. **Plan the structure.** A good general-purpose layout:
+   - `cover` with title/subtitle/tagline
+   - `heading` (level 1) "Executive summary" + a short `paragraph`
+   - `kpi_row` of 3–6 headline numbers
+   - one or two `table`s (style `"zebra"`) for the supporting detail
+   - optional `chart` (`kind: "bar"` / `"line"` / `"pie"`) if there is
+     a meaningful comparison to show
+   - `callout` (`variant: "note"` or `"warning"`) for caveats
+3. **Pick a theme.** Default `"professional"` for business reports,
+   `"modern"` for product/marketing, `"minimal"` for technical docs,
+   `"vibrant"` only when explicitly asked for something colourful.
+4. **Call `pdf.create`** with `output=<same-dir-as-source>/<name>.pdf`
+   and `page_numbers=true` for anything multi-page.
+5. **Verify**. If the user might want to check the look, follow up with
+   `pdf.see(path=<output>, pages="1")` so they see the cover rendered.
+
+Notes:
+- Cells in `table.rows` can be plain strings *or* contain inline
+  markup (`<b>`, `<i>`, `<font color='#...'>`, `<sub>`, `<super>`,
+  `<br/>`, `<link>`). Unicode sub/super characters are converted
+  automatically; you do not need to special-case `H₂O` or `m²`.
+- For numbers, format them yourself before passing them in (`"$1,234.56"`,
+  `"12.4%"`); the tool does not auto-format.
+- For very large tables (> ~30 rows), summarise the long tail in a
+  trailing row ("… plus 412 more") rather than paginating manually.
+- If the user asks for an Excel-to-PDF "export", do NOT round-trip
+  through Excel. Read the workbook, build the PDF from the data with
+  `pdf.create`.
 
 ### Forms
 
@@ -126,5 +172,6 @@ table; each entry maps to a single tool call.
 
 - The Anthropic upstream `pdf` skill (in `anthropic-skills/skills/pdf/`)
   documents the underlying Python libraries (pypdf, pdfplumber, reportlab,
-  pypdfium2). This skill exposes those capabilities as tool calls; do not
-  shell out or write Python yourself.
+  pypdfium2). This skill exposes the same capabilities as tool calls
+  (including PDF authoring via `pdf.create`); do not shell out or write
+  Python yourself.

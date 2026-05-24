@@ -1,8 +1,10 @@
 """Implementations for the `orchestrator` tool domain.
 
-These tools let the *router pack* dispatch work to specialists. They are
-useful only when the surrounding worker has populated `ToolCtx.allowed_packs`
-and `ToolCtx.emit` — i.e. when the running pack is the router.
+This module exposes the `orchestrator.delegate` tool. It is useful only
+when the surrounding worker has populated `ToolCtx.allowed_packs` and
+`ToolCtx.emit` — i.e. when the running pack is the router. The router's
+system prompt inlines the pack + skill catalogs natively, so it does not
+need separate listing tools.
 
 Three delegation shapes are supported:
 
@@ -16,12 +18,10 @@ Three delegation shapes are supported:
      spawned with that skill list and the router's own pack identity
      (model, classification, data sources, limits).
 
-Skills can be chosen from the full on-disk catalog (see
-`orchestrator.list_skills`). There is no per-run skill allow-list — the
-router is trusted to compose any skill into a sub-agent. What the router
-itself may invoke is constrained separately, by the router pack's own
-`skills:` list (and the tools those skills require), not by anything
-here.
+There is no per-run skill allow-list — the router is trusted to compose
+any skill into a sub-agent. What the router itself may invoke is
+constrained separately, by the router pack's own `skills:` list (and the
+tools those skills require), not by anything here.
 
 Specialists run in-process inside the same worker (no extra OS process):
 we just call `orchestrator.subagent.run()` with a fresh `BoundPack`. This
@@ -34,56 +34,7 @@ import traceback
 from dataclasses import replace
 
 from runtime.pack_loader import bind, bind_skills, load as load_pack
-from runtime.skill_loader import catalog as skill_catalog
 from runtime.tool_registry import ToolCtx, ToolError, ToolResult
-
-
-def list_packs(params, ctx: ToolCtx) -> ToolResult:
-    if ctx.allowed_packs is None:
-        return ToolResult(
-            ok=False,
-            error=ToolError(
-                code="no_router_context",
-                message="orchestrator.list_packs called outside a router run.",
-            ),
-        )
-    items = []
-    for name in ctx.allowed_packs:
-        try:
-            pack = load_pack(name)
-        except Exception as e:
-            items.append({"name": name, "description": f"(load failed: {e})", "classification": "unknown"})
-            continue
-        items.append(
-            {
-                "name": pack.name,
-                "description": pack.description,
-                "classification": pack.classification,
-            }
-        )
-    return ToolResult(ok=True, data={"packs": items})
-
-
-def list_skills(params, ctx: ToolCtx) -> ToolResult:
-    """Return the full on-disk skill catalog (name + description).
-
-    Not gated by any per-run allow-list: this is what the router may
-    compose into a sub-agent via `orchestrator.delegate`. Gated by
-    `allowed_packs` presence purely as a "is this a router run?" check.
-    """
-    if ctx.allowed_packs is None:
-        return ToolResult(
-            ok=False,
-            error=ToolError(
-                code="no_router_context",
-                message="orchestrator.list_skills called outside a router run.",
-            ),
-        )
-    items = [
-        {"name": f.name, "description": f.description}
-        for f in skill_catalog()
-    ]
-    return ToolResult(ok=True, data={"skills": items})
 
 
 def _err(code: str, message: str) -> ToolResult:

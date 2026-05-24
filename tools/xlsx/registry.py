@@ -21,6 +21,15 @@ class ReadParams(BaseModel):
     sheet: Optional[str] = Field(None, description="Sheet name (xlsx only). Ignored when all_sheets=true. Defaults to the first sheet.")
     has_header: bool = Field(True, description="If true, treat the first row as column headers.")
     all_sheets: bool = Field(False, description="If true, return every sheet (xlsx only) as a list under `sheets`.")
+    max_rows: int = Field(
+        10,
+        description=(
+            "Cap on data rows returned per sheet. Default 10 — enough for a "
+            "preview without flooding the model context. Raise it only when "
+            "you genuinely need more rows; for full-table computation use "
+            "xlsx.sql instead."
+        ),
+    )
 
 
 class InfoParams(BaseModel):

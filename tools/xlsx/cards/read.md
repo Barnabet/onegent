@@ -36,6 +36,7 @@ a workbook at once.
 | sheet | string | no | Sheet name (xlsx only). Defaults to the first sheet. Ignored when `all_sheets=true`. |
 | has_header | bool | no | If true (default), the first row becomes `headers`; otherwise it stays in `rows`. |
 | all_sheets | bool | no | If true, return every sheet of the workbook under `sheets`. Xlsx only. |
+| max_rows | int | no | Cap on data rows returned per sheet (default 10). When the sheet has more rows, `rows` is truncated and `truncated: true` is set in the payload. Raise it if you genuinely need more rows; use `xlsx.sql` for aggregations. |
 
 ## Returns
 Single sheet:
@@ -43,7 +44,12 @@ Single sheet:
 {ok: true, data: {
   sheet: "<name>", sheet_names: [...],
   headers: [...] | null, rows: [[...], ...],
-  row_count: <int>, col_count: <int>
+  row_count: <int>,            # total data rows in the sheet
+  col_count: <int>,
+  // present only when truncated:
+  returned_row_count: <int>,   # how many rows are actually in `rows`
+  truncated: true,
+  truncation_note: "Showing first N of M data rows. ..."
 }}
 ```
 All sheets (`all_sheets=true`):

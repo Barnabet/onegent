@@ -17,6 +17,26 @@ from runtime.pack_loader import BoundPack
 from runtime.tool_registry import ToolCtx
 
 
+def _extract_output_paths(data: dict) -> List[str]:
+    """Return the set of disk paths a tool just wrote to.
+
+    Tools in this repo report their outputs in one of two shapes:
+      - ``data["output"]`` — a single path string (xlsx/pdf write tools).
+      - ``data["outputs"]`` — a list of path strings (xlsx.convert per-sheet,
+        future multi-file emitters).
+    Anything else is ignored on purpose: we don't want to attach random
+    string fields that happen to look path-shaped.
+    """
+    out: List[str] = []
+    single = data.get("output")
+    if isinstance(single, str) and single:
+        out.append(single)
+    many = data.get("outputs")
+    if isinstance(many, list):
+        out.extend(p for p in many if isinstance(p, str) and p)
+    return out
+
+
 @dataclass
 class RunStats:
     tool_calls: int = 0
@@ -24,9 +44,18 @@ class RunStats:
     final_finish_reason: str = "stop"
 
 
-def build_system_prompt(bound: BoundPack, files: Optional[List[dict]] = None) -> str:
+def build_system_prompt(
+    bound: BoundPack,
+    files: Optional[List[dict]] = None,
+    allowed_packs: Optional[List[str]] = None,
+) -> str:
     """Compose the system prompt: a header + each skill's body, plus any
-    conversation-scoped file attachments the user has uploaded."""
+    conversation-scoped file attachments the user has uploaded.
+
+    When `allowed_packs` is non-None (router runs), the prompt also inlines
+    the catalog of delegatable packs and the full on-disk skill catalog, so
+    the router does not need to spend tool calls on list_packs / list_skills.
+    """
     parts: List[str] = []
     parts.append(
         "You are a CIB Gen-AI sub-agent. Follow the loaded skills exactly. "
@@ -61,6 +90,34 @@ def build_system_prompt(bound: BoundPack, files: Optional[List[dict]] = None) ->
                 "specialist that can read it."
             )
         parts.append("")
+
+    # Router-only: inline the pack + skill catalogs so the orchestrator can
+    # reason about delegation natively, without spending tool calls on
+    # list_packs / list_skills.
+    if allowed_packs is not None:
+        from runtime.pack_loader import load as load_pack
+        from runtime.skill_loader import catalog as skill_catalog
+
+        parts.append(f"Delegatable packs ({len(allowed_packs)}):")
+        if not allowed_packs:
+            parts.append("  (none — only skills-only delegation is available)")
+        for name in allowed_packs:
+            try:
+                p = load_pack(name)
+                parts.append(f"  - {p.name} [{p.classification}] — {p.description}")
+            except Exception as e:
+                parts.append(f"  - {name} (load failed: {e})")
+        parts.append("")
+
+        try:
+            cat = skill_catalog()
+        except Exception:
+            cat = []
+        parts.append(f"Composable skills ({len(cat)}):")
+        for s in cat:
+            parts.append(f"  - {s.name} — {s.description}")
+        parts.append("")
+
     parts.append(f"Loaded skills ({len(bound.skills)}):")
     for s in bound.skills:
         parts.append("")
@@ -98,7 +155,7 @@ def run(
     server to give the router conversation memory across runs. Sub-agents
     don't receive history — each delegation is self-contained.
     """
-    system = build_system_prompt(bound, files=ctx.files)
+    system = build_system_prompt(bound, files=ctx.files, allowed_packs=ctx.allowed_packs)
     tools = build_tool_specs(bound)
 
     messages: List[dict] = list(history or [])
@@ -144,6 +201,18 @@ def run(
                     payload=event_payload,
                 )
             )
+            # If the tool wrote one or more files to disk, emit `file_created`
+            # events so the parent process can attach them to the conversation
+            # and the UI's Files sidebar can pick them up. We just announce
+            # the paths; the parent validates / registers / re-emits.
+            if result.ok and isinstance(result.data, dict):
+                for path in _extract_output_paths(result.data):
+                    emit(worker_proto.file_created(
+                        path=path,
+                        tool_name=tc.name,
+                        call_id=tc.id,
+                        conversation_id=ctx.conversation_id,
+                    ))
             # The tool-protocol message itself stays text-only (some providers
             # reject image parts inside a `tool` role message).
             tool_text_payload = {k: v for k, v in payload_dict.items() if k != "images"}

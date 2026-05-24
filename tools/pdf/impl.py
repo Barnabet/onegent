@@ -83,6 +83,37 @@ def _parse_pages(spec: Optional[str], total: int) -> Tuple[Optional[List[int]], 
     return out, None
 
 
+def _cap_indices(indices: List[int], max_pages: Optional[int]) -> List[int]:
+    """Return the first `max_pages` items of `indices`, or the full list if
+    `max_pages` is None / non-positive."""
+    if max_pages is None or max_pages <= 0:
+        return list(indices)
+    return list(indices[:max_pages])
+
+
+def _attach_page_truncation(
+    payload: dict,
+    requested_indices: List[int],
+    returned_pages_1based: List[int],
+) -> None:
+    """Mutates `payload` in place to record that some requested pages were
+    dropped by the max_pages cap. No-op when nothing was dropped."""
+    requested_1based = [i + 1 for i in requested_indices]
+    if len(returned_pages_1based) >= len(requested_1based):
+        return
+    skipped = [p for p in requested_1based if p not in set(returned_pages_1based)]
+    payload["requested_page_count"] = len(requested_1based)
+    payload["returned_page_count"] = len(returned_pages_1based)
+    payload["skipped_pages"] = skipped
+    payload["truncated"] = True
+    payload["truncation_note"] = (
+        f"Returned {len(returned_pages_1based)} of {len(requested_1based)} "
+        f"requested pages (max_pages cap). To see the remaining "
+        f"{len(skipped)} page(s), call again with `pages=` listing them "
+        "explicitly or raise `max_pages`."
+    )
+
+
 # ---------------------------------------------------------------------------
 # pdf.read — metadata + structure
 # ---------------------------------------------------------------------------
@@ -168,14 +199,17 @@ def extract_text(params, ctx: ToolCtx) -> ToolResult:
         pdfplumber = None  # type: ignore
         backend = "pypdf"
 
+    max_pages = getattr(params, "max_pages", None)
+    requested_indices: List[int] = []
     pages_text: List[dict] = []
     if backend == "pdfplumber":
         try:
             with pdfplumber.open(str(src)) as pdf:  # type: ignore[union-attr]
                 total = len(pdf.pages)
-                indices, perr = _parse_pages(params.pages, total)
+                requested_indices, perr = _parse_pages(params.pages, total)
                 if perr:
                     return perr
+                indices = _cap_indices(requested_indices, max_pages)
                 for i in indices:
                     page = pdf.pages[i]
                     txt = page.extract_text(layout=params.preserve_layout) or ""
@@ -187,21 +221,24 @@ def extract_text(params, ctx: ToolCtx) -> ToolResult:
             from pypdf import PdfReader
             reader = PdfReader(str(src))
             total = len(reader.pages)
-            indices, perr = _parse_pages(params.pages, total)
+            requested_indices, perr = _parse_pages(params.pages, total)
             if perr:
                 return perr
+            indices = _cap_indices(requested_indices, max_pages)
             for i in indices:
                 pages_text.append({"page": i + 1, "text": reader.pages[i].extract_text() or ""})
         except Exception as e:
             return _err("extraction_failed", f"pypdf failed: {e}")
 
     total_chars = sum(len(p["text"]) for p in pages_text)
-    return ToolResult(ok=True, data={
+    payload = {
         "backend": backend,
         "page_count": len(pages_text),
         "char_count": total_chars,
         "pages": pages_text,
-    })
+    }
+    _attach_page_truncation(payload, requested_indices, [p["page"] for p in pages_text])
+    return ToolResult(ok=True, data=payload)
 
 
 # ---------------------------------------------------------------------------
@@ -219,14 +256,18 @@ def extract_tables(params, ctx: ToolCtx) -> ToolResult:
     if err:
         return err
 
+    max_pages = getattr(params, "max_pages", None)
+    requested_indices: List[int] = []
+    scanned_indices: List[int] = []
     out_tables: List[dict] = []
     try:
         with pdfplumber.open(str(src)) as pdf:
             total = len(pdf.pages)
-            indices, perr = _parse_pages(params.pages, total)
+            requested_indices, perr = _parse_pages(params.pages, total)
             if perr:
                 return perr
-            for i in indices:
+            scanned_indices = _cap_indices(requested_indices, max_pages)
+            for i in scanned_indices:
                 page = pdf.pages[i]
                 tables = page.extract_tables() or []
                 for j, table in enumerate(tables):
@@ -240,10 +281,12 @@ def extract_tables(params, ctx: ToolCtx) -> ToolResult:
     except Exception as e:
         return _err("extraction_failed", f"pdfplumber failed: {e}")
 
-    return ToolResult(ok=True, data={
+    payload = {
         "table_count": len(out_tables),
         "tables": out_tables,
-    })
+    }
+    _attach_page_truncation(payload, requested_indices, [i + 1 for i in scanned_indices])
+    return ToolResult(ok=True, data=payload)
 
 
 # ---------------------------------------------------------------------------
@@ -638,3 +681,36 @@ def see(params, ctx: ToolCtx) -> ToolResult:
         },
         images=images,
     )
+
+
+# ---------------------------------------------------------------------------
+# pdf.create — author a brand-new PDF from a structured element list
+# ---------------------------------------------------------------------------
+
+
+def create(params, ctx: ToolCtx) -> ToolResult:
+    try:
+        import reportlab  # noqa: F401
+    except ImportError:
+        return _err("dependency_missing", "reportlab is not installed.")
+
+    out = Path(params.output)
+    if out.suffix.lower() != ".pdf":
+        return _err("invalid_input", "`output` must end in .pdf.")
+    if out.exists() and not params.overwrite:
+        return _err(
+            "output_exists",
+            f"{params.output!r} exists; pass overwrite=true to replace.",
+        )
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if not isinstance(params.elements, list) or not params.elements:
+        return _err("invalid_input", "`elements` must be a non-empty list.")
+
+    from . import create as _engine
+
+    try:
+        data = _engine.build(params, out)
+    except Exception as e:
+        return _err("create_failed", f"PDF build failed: {e}")
+    return ToolResult(ok=True, data=data)

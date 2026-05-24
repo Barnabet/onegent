@@ -96,6 +96,30 @@ def test_extract_text_pages_spec(tmp_path):
     assert [pg["page"] for pg in r.data["pages"]] == [1, 2]
 
 
+def test_extract_text_truncates_default_max_pages(tmp_path):
+    tool_registry.discover()
+    p = tmp_path / "doc.pdf"
+    _make_pdf(p, pages=8)
+
+    # Default max_pages is 5 — should truncate.
+    r = tool_registry.call("pdf.extract_text", {"path": str(p)}, _ctx())
+    assert r.ok, r.error
+    assert r.data["page_count"] == 5            # pages actually returned
+    assert [pg["page"] for pg in r.data["pages"]] == [1, 2, 3, 4, 5]
+    assert r.data["truncated"] is True
+    assert r.data["requested_page_count"] == 8
+    assert r.data["returned_page_count"] == 5
+    assert r.data["skipped_pages"] == [6, 7, 8]
+
+    # Explicitly raising max_pages disables the cap.
+    r2 = tool_registry.call(
+        "pdf.extract_text", {"path": str(p), "max_pages": 20}, _ctx(),
+    )
+    assert r2.ok
+    assert r2.data["page_count"] == 8
+    assert r2.data.get("truncated") is None
+
+
 def test_extract_text_page_out_of_range(tmp_path):
     tool_registry.discover()
     p = tmp_path / "doc.pdf"
@@ -328,3 +352,119 @@ def test_see_default_first_page(tmp_path):
     assert r.ok, r.error
     assert len(r.images) == 1
     assert r.data["rendered"][0]["page"] == 1
+
+
+# ---------------------------------------------------------------------------
+# pdf.create — author a brand-new PDF from a structured element list
+# ---------------------------------------------------------------------------
+
+
+def test_create_minimal(tmp_path):
+    tool_registry.discover()
+    out = tmp_path / "out.pdf"
+    r = tool_registry.call(
+        "pdf.create",
+        {"output": str(out), "elements": [{"type": "title", "text": "Hi"}]},
+        _ctx(),
+    )
+    assert r.ok, r.error
+    assert out.is_file()
+    assert r.data["page_count"] == 1
+    assert r.data["size_bytes"] > 100
+
+
+def test_create_rich_document(tmp_path):
+    """Exercise covers, KPIs, callouts, tables, charts, diagrams, columns,
+    timelines, badges, sub/super unicode, and themes in one go."""
+    tool_registry.discover()
+    out = tmp_path / "rich.pdf"
+    r = tool_registry.call(
+        "pdf.create",
+        {
+            "output": str(out),
+            "theme": "professional",
+            "title": "Report",
+            "author": "test",
+            "page_numbers": True,
+            "header": {"left": "Confidential", "right": "Draft"},
+            "footer": "© 2026",
+            "elements": [
+                {"type": "cover", "title": "Q1 Report", "subtitle": "Inventory", "tagline": "v1"},
+                {"type": "heading", "level": 1, "text": "Summary"},
+                {"type": "paragraph", "text": "Total H₂O at temperature T² rose."},
+                {"type": "kpi_row", "items": [
+                    {"label": "Products", "value": "1,000"},
+                    {"label": "Categories", "value": "8", "color": "#10b981"},
+                ]},
+                {"type": "callout", "variant": "warning", "title": "Note", "text": "Stale data."},
+                {"type": "table", "style": "zebra", "rows": [
+                    ["A", "B", "C"],
+                    ["1", "2", "3"],
+                    ["4", "5", "6"],
+                ]},
+                {"type": "chart", "kind": "bar",
+                 "labels": ["Q1", "Q2"], "data": [[10, 20]]},
+                {"type": "diagram", "layout": "horizontal", "nodes": [
+                    {"id": "a", "label": "A"}, {"id": "b", "label": "B"},
+                ], "edges": [{"from": "a", "to": "b"}]},
+                {"type": "columns", "columns": [
+                    [{"type": "paragraph", "text": "left"}],
+                    [{"type": "paragraph", "text": "right"}],
+                ]},
+                {"type": "timeline", "items": [{"title": "Step 1"}, {"title": "Step 2"}]},
+                {"type": "badges", "items": [{"text": "ok"}, {"text": "warn", "color": "#f59e0b"}]},
+                {"type": "page_break"},
+                {"type": "heading", "level": 2, "text": "Appendix"},
+                {"type": "quote", "text": "It works.", "attribution": "us"},
+            ],
+        },
+        _ctx(),
+    )
+    assert r.ok, r.error
+    assert r.data["page_count"] >= 2          # cover forces a page break, then content
+    assert r.data["element_count"] == 14
+    assert r.data["theme"] == "professional"
+
+
+def test_create_requires_pdf_extension(tmp_path):
+    tool_registry.discover()
+    r = tool_registry.call(
+        "pdf.create",
+        {"output": str(tmp_path / "out.txt"), "elements": [{"type": "title", "text": "x"}]},
+        _ctx(),
+    )
+    assert not r.ok
+    assert r.error.code == "invalid_input"
+
+
+def test_create_no_overwrite(tmp_path):
+    tool_registry.discover()
+    out = tmp_path / "out.pdf"
+    out.write_bytes(b"%PDF-1.4 stub")
+    r = tool_registry.call(
+        "pdf.create",
+        {"output": str(out), "elements": [{"type": "title", "text": "x"}]},
+        _ctx(),
+    )
+    assert not r.ok
+    assert r.error.code == "output_exists"
+
+
+def test_create_empty_elements_fails(tmp_path):
+    tool_registry.discover()
+    r = tool_registry.call(
+        "pdf.create",
+        {"output": str(tmp_path / "out.pdf"), "elements": []},
+        _ctx(),
+    )
+    assert not r.ok
+    assert r.error.code == "invalid_input"
+
+
+def test_create_unicode_subsuper_normalization():
+    """The engine must rewrite Unicode sub/super into <sub>/<super> tags
+    so the built-in fonts don't render black boxes."""
+    from tools.pdf.create import _normalize_unicode_subsuper
+    assert _normalize_unicode_subsuper("H₂O") == "H<sub>2</sub>O"
+    assert _normalize_unicode_subsuper("x² + y²") == "x<super>2</super> + y<super>2</super>"
+    assert _normalize_unicode_subsuper("plain") == "plain"

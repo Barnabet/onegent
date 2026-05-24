@@ -36,6 +36,7 @@ def run(
     allowed_packs: Optional[List[str]] = None,
     history: Optional[List[dict]] = None,
     files: Optional[List[dict]] = None,
+    conversation_id: Optional[str] = None,
 ) -> RunResult:
     """Spawn a worker, collect events to completion, return the final reply."""
     rid = run_id or f"run_{uuid.uuid4().hex[:12]}"
@@ -50,6 +51,7 @@ def run(
         allowed_packs=allowed_packs,
         history=history,
         files=files,
+        conversation_id=conversation_id,
     )
 
     proc = mp_ctx.Process(target=worker_main, args=(child_conn, job), daemon=True)

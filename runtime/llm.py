@@ -6,9 +6,10 @@ Tool-call shape is normalised so the rest of the codebase never deals with
 provider-specific quirks.
 
 Configuration via env (with sensible defaults for local dev):
-  LLM_BASE_URL  default: http://127.0.0.1:8317/v1
-  LLM_API_KEY   default: your-api-key-1
-  LLM_MODEL     default: claude-sonnet-4-6
+  LLM_BASE_URL     default: http://127.0.0.1:8317/v1
+  LLM_API_KEY      default: your-api-key-1
+  LLM_MODEL        default: claude-sonnet-4-6
+  LLM_TIMEOUT      default: 600 (seconds — total read timeout per request)
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import httpx
 DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8317/v1")
 DEFAULT_API_KEY = os.environ.get("LLM_API_KEY", "your-api-key-1")
 DEFAULT_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-4-6")
+DEFAULT_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "600"))
 
 
 @dataclass
@@ -77,7 +79,7 @@ def chat(
     system: Optional[str] = None,
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
-    timeout: float = 120.0,
+    timeout: Optional[float] = None,
 ) -> ChatResponse:
     """
     Send a chat completion request. `tools` is a list of dicts shaped as
@@ -87,6 +89,11 @@ def chat(
     base = (base_url or DEFAULT_BASE_URL).rstrip("/")
     key = api_key or DEFAULT_API_KEY
     mdl = model or DEFAULT_MODEL
+    # Long-running generations (e.g. multi-page PDF drafts) can comfortably
+    # exceed 2 minutes of model time. Use a generous read timeout but keep
+    # connect short so a wedged proxy still fails fast.
+    read_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+    http_timeout = httpx.Timeout(read_timeout, connect=10.0)
 
     payload_messages: List[dict] = []
     if system:
@@ -105,9 +112,20 @@ def chat(
         "Content-Type": "application/json",
     }
 
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(timeout=http_timeout) as client:
         resp = client.post(f"{base}/chat/completions", json=payload, headers=headers)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Surface the upstream body — without it, callers only see "500
+            # Internal Server Error" and have no way to diagnose schema /
+            # payload rejections from the proxied model.
+            detail = (resp.text or "").strip()
+            if len(detail) > 2000:
+                detail = detail[:2000] + "…"
+            raise httpx.HTTPStatusError(
+                f"{resp.status_code} {resp.reason_phrase} from {base}: {detail}",
+                request=resp.request,
+                response=resp,
+            )
         body = resp.json()
 
     return _parse_response(body)

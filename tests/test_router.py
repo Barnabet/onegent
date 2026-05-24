@@ -1,7 +1,8 @@
 """
 Router / orchestrator tool tests. No LLM is touched — we call the
-orchestrator.list_packs and orchestrator.delegate tools directly with a
-hand-built ToolCtx, the same way the model would.
+orchestrator.delegate tool directly with a hand-built ToolCtx, the same
+way the model would. The pack + skill catalogs are inlined into the
+router's system prompt natively, so there are no list_* tools to test.
 """
 
 from __future__ import annotations
@@ -40,7 +41,10 @@ def test_router_pack_loads_and_binds():
     ]
     # Routing tools are always bound; file-read tools come from pdf_handling
     # and xlsx_handling so the router can do small read-only info-gathering.
-    assert {"orchestrator.list_packs", "orchestrator.delegate"} <= set(bound.tools)
+    assert {"orchestrator.delegate"} <= set(bound.tools)
+    # The retired list_* tools must NOT be bound.
+    assert "orchestrator.list_packs" not in bound.tools
+    assert "orchestrator.list_skills" not in bound.tools
     assert "pdf.read" in bound.tools
     assert "xlsx.read" in bound.tools
 
@@ -148,25 +152,46 @@ def test_delegate_empty_files_list_forwards_none():
     assert captured["files"] == []
 
 
-def test_list_packs_returns_allowed_set():
+def test_list_tools_are_retired():
+    """The router gets pack + skill catalogs natively in its system prompt,
+    so the listing tools no longer exist in the registry."""
     tool_registry.discover(REPO / "tools")
-    ctx = _ctx(["hello", "credit_analyst"])
-    res = tool_registry.call("orchestrator.list_packs", {}, ctx)
-    assert res.ok
-    names = [p["name"] for p in res.data["packs"]]
-    assert names == ["hello", "credit_analyst"]
-    # Each entry carries a description + classification.
-    for entry in res.data["packs"]:
-        assert entry["description"]
-        assert entry["classification"] in ("public", "internal", "confidential", "restricted")
+    assert not tool_registry.has("orchestrator.list_packs")
+    assert not tool_registry.has("orchestrator.list_skills")
 
 
-def test_list_packs_without_router_context_fails():
+def test_router_system_prompt_inlines_pack_and_skill_catalogs():
+    from runtime.pack_loader import bind, load
+    from orchestrator.subagent import build_system_prompt
+
     tool_registry.discover(REPO / "tools")
-    ctx = _ctx(None)  # not a router run
-    res = tool_registry.call("orchestrator.list_packs", {}, ctx)
-    assert not res.ok
-    assert res.error.code == "no_router_context"
+    pack = load("router", root=REPO / "packs")
+    bound = bind(pack, skills_root_path=REPO / "skills")
+    prompt = build_system_prompt(
+        bound,
+        files=None,
+        allowed_packs=["hello", "credit_analyst"],
+    )
+    # Pack catalog is present, with descriptions.
+    assert "Delegatable packs (2)" in prompt
+    assert "- hello" in prompt
+    assert "- credit_analyst" in prompt
+    # Skill catalog is present and includes the on-disk skills.
+    assert "Composable skills" in prompt
+    assert "- pdf_handling" in prompt
+    assert "- xlsx_handling" in prompt
+
+
+def test_non_router_run_does_not_inline_catalogs():
+    from runtime.pack_loader import bind, load
+    from orchestrator.subagent import build_system_prompt
+
+    tool_registry.discover(REPO / "tools")
+    pack = load("hello", root=REPO / "packs")
+    bound = bind(pack, skills_root_path=REPO / "skills")
+    prompt = build_system_prompt(bound, files=None, allowed_packs=None)
+    assert "Delegatable packs" not in prompt
+    assert "Composable skills" not in prompt
 
 
 def test_delegate_blocks_pack_not_in_allow_list():
@@ -222,26 +247,6 @@ def _fake_run_capture(captured):
             final_finish_reason = "stop"
         return _S()
     return fake_run
-
-
-def test_list_skills_returns_full_catalog():
-    tool_registry.discover(REPO / "tools")
-    ctx = _ctx(allowed_packs=[])
-    res = tool_registry.call("orchestrator.list_skills", {}, ctx)
-    assert res.ok
-    names = {s["name"] for s in res.data["skills"]}
-    # Whatever skills exist on disk should be returned; sanity-check a few.
-    assert {"router", "pdf_handling", "xlsx_handling"}.issubset(names)
-    for entry in res.data["skills"]:
-        assert entry["description"]
-
-
-def test_list_skills_without_router_context_fails():
-    tool_registry.discover(REPO / "tools")
-    ctx = _ctx(allowed_packs=None)
-    res = tool_registry.call("orchestrator.list_skills", {}, ctx)
-    assert not res.ok
-    assert res.error.code == "no_router_context"
 
 
 def test_delegate_requires_pack_or_skills():

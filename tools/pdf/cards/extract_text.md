@@ -28,8 +28,9 @@ available (layout-aware), falls back to `pypdf` otherwise.
 | name | type | required | description |
 |---|---|---|---|
 | path | string | yes | Path to a `.pdf` file. |
-| pages | string | no | 1-based page spec, e.g. `"1"`, `"1-3"`, `"1,3-5,8"`. Omit for every page. |
+| pages | string | no | 1-based page spec, e.g. `"1"`, `"1-3"`, `"1,3-5,8"`. Omit to use the document's first `max_pages` pages. |
 | preserve_layout | bool | no | If true and pdfplumber is available, preserves columns/whitespace. Default false. |
+| max_pages | int | no | Cap on the number of pages returned (default 5). Applied after the `pages` spec, so asking for `"1-50"` still gives you only the first 5 unless you raise this. When the cap drops pages, the payload includes `truncated: true` and `skipped_pages: [...]`. |
 
 ## Returns
 On success:
@@ -40,7 +41,13 @@ On success:
     backend: "pdfplumber" | "pypdf",
     page_count: <int>,
     char_count: <int>,
-    pages: [{page: <1-based>, text: "..."}, ...]
+    pages: [{page: <1-based>, text: "..."}, ...],
+    // present only when truncated:
+    requested_page_count: <int>,
+    returned_page_count: <int>,
+    skipped_pages: [<1-based>, ...],
+    truncated: true,
+    truncation_note: "Returned N of M requested pages..."
   }
 }
 ```
