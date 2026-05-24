@@ -3,7 +3,7 @@
 Generated from skills/*/SKILL.md frontmatter. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**5 skills.**
+**6 skills.**
 
 ## `credit_memo` &nbsp; <sub>v0.1.0</sub>
 
@@ -12,6 +12,10 @@ Use this skill when the user asks you to draft, prepare, or assemble a credit me
 ## `hello` &nbsp; <sub>v0.1.0</sub>
 
 Use this skill when the user asks for a connectivity / smoke-test of the agent platform — typically phrases like "say hi", "ping", "smoke test", "are you alive". The skill calls a no-op echo tool to prove the tool plumbing works end-to-end, then reports success.
+
+## `pdf_handling` &nbsp; <sub>v0.1.0</sub>
+
+Use this skill whenever the user gives you a `.pdf` path or asks to do anything with a PDF — read it, extract text or tables, look at a page, merge / split / rotate, encrypt or decrypt, fill a form, or OCR a scan. Append this skill on top of whatever pack is running; it composes cleanly with other skills. Do not use this skill for `.docx`, `.pptx`, or `.xlsx` files — there are (or will be) dedicated skills for those.
 
 ## `router` &nbsp; <sub>v0.1.0</sub>
 

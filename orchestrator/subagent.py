@@ -98,12 +98,32 @@ def run(
             emit(worker_proto.tool_call(tc.name, tc.arguments, tc.id))
             result = tool_registry.call(tc.name, tc.arguments, ctx)
             payload_dict = result.model_dump()
+            # Strip image bytes from the audit/result event — they're large
+            # and the model receives them via the follow-up user message.
+            event_payload = dict(payload_dict)
+            if event_payload.get("images"):
+                event_payload["images"] = [
+                    {"mime": i.get("mime"), "label": i.get("label"), "bytes": len(i.get("b64") or "")}
+                    for i in event_payload["images"]
+                ]
             emit(
                 worker_proto.tool_result(
                     name=tc.name,
                     call_id=tc.id,
                     ok=result.ok,
-                    payload=payload_dict,
+                    payload=event_payload,
                 )
             )
-            messages.append(llm.tool_result_message(tc.id, json.dumps(payload_dict)))
+            # The tool-protocol message itself stays text-only (some providers
+            # reject image parts inside a `tool` role message).
+            tool_text_payload = {k: v for k, v in payload_dict.items() if k != "images"}
+            messages.append(llm.tool_result_message(tc.id, json.dumps(tool_text_payload)))
+            # If the tool returned inline images, surface them in a follow-up
+            # user message so the model can actually see them on the next turn.
+            if result.images:
+                messages.append(
+                    llm.user_message_with_images(
+                        text=f"Inline images returned by tool `{tc.name}`:",
+                        images=[i.model_dump() for i in result.images],
+                    )
+                )

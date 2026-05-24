@@ -42,12 +42,29 @@ class Citation(BaseModel):
     detail: Optional[str] = None
 
 
+class ToolImage(BaseModel):
+    """A single image attached to a tool result.
+
+    `b64` is base64-encoded image bytes (no `data:` prefix). `mime` is e.g.
+    `image/png` or `image/jpeg`. `label` is an optional caption the model
+    sees alongside the image.
+    """
+
+    mime: str
+    b64: str
+    label: Optional[str] = None
+
+
 class ToolResult(BaseModel):
     ok: bool
     data: Optional[dict] = None
     error: Optional[ToolError] = None
     warnings: List[str] = []
     citations: List[Citation] = []
+    # Optional inline images. The sub-agent loop injects these into the next
+    # turn as a follow-up user message so the model can actually see them.
+    # Tools that return images MUST keep the count small (typically ≤ 5).
+    images: List[ToolImage] = []
 
 
 @dataclass

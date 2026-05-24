@@ -165,3 +165,27 @@ def assistant_message_from_response(resp: ChatResponse) -> dict:
 
 def tool_result_message(call_id: str, content: str) -> dict:
     return {"role": "tool", "tool_call_id": call_id, "content": content}
+
+
+def user_message_with_images(text: str, images: List[dict]) -> dict:
+    """
+    Build a user message that carries inline images in addition to text.
+
+    `images` is a list of {mime, b64, label?} dicts. We emit OpenAI-style
+    multimodal content using `image_url` parts with `data:` URLs, which both
+    OpenAI and Anthropic-via-OpenAI-compat endpoints accept.
+    """
+    parts: List[Dict[str, Any]] = []
+    if text:
+        parts.append({"type": "text", "text": text})
+    for img in images:
+        label = img.get("label")
+        if label:
+            parts.append({"type": "text", "text": label})
+        parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{img['mime']};base64,{img['b64']}"},
+            }
+        )
+    return {"role": "user", "content": parts}

@@ -3,7 +3,7 @@
 Generated from the live tool registry. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**13 tools** across **6 domains**.
+**25 tools** across **7 domains**.
 
 ## By domain
 
@@ -248,6 +248,790 @@ Returns: `{ok: true, data: {packs: [
 
 ## See also
 - `orchestrator.delegate` — actually invoke a specialist with a sub-task.
+
+</details>
+
+### `pdf`
+
+#### `pdf.decrypt` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.decrypt
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, security]
+---
+
+# pdf.decrypt
+
+## Purpose
+Open a password-protected PDF using the supplied password and write an
+unencrypted copy to a new path.
+
+## When to use
+- The user knows the password and wants an unencrypted copy of the document.
+- A skill needs to call other PDF tools that cannot operate on encrypted input.
+
+## When NOT to use
+- To *guess* a password — this tool only accepts a known one. Do not loop.
+- For PDFs that aren't actually encrypted — copy the file directly instead.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the encrypted `.pdf`. |
+| password | string | yes | Password that opens the file. |
+| output | string | yes | Destination `.pdf` path (will be unencrypted). |
+| overwrite | bool | no | Replace existing destination. Default false. |
+
+## Returns
+On success: `{ok: true, data: {output, page_count}}`
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `password_required` — supplied password did not unlock the file.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### Remove a password
+Call: `pdf.decrypt(path="/tmp/secure.pdf", password="hunter2", output="/tmp/open.pdf")`
+
+## See also
+- `pdf.encrypt` — add a password.
+- `pdf.read` — verify whether a file is encrypted before calling this.
+
+</details>
+
+#### `pdf.encrypt` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.encrypt
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, security]
+---
+
+# pdf.encrypt
+
+## Purpose
+Add password protection to a PDF and write the protected copy to a new path.
+
+## When to use
+- The user wants to send a PDF that opens only with a password.
+- A skill must apply standard password protection before handing a file off.
+
+## When NOT to use
+- To remove a password — use `pdf.decrypt`.
+- To restrict permissions only (printing, copying) while leaving the file
+  openable — that requires fine-grained owner permissions which this tool
+  does not expose; ask the user for an alternative if they need that.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the source `.pdf`. |
+| user_password | string | yes | Password the recipient will type to open the PDF. |
+| owner_password | string | no | Password for permissions changes. Defaults to `user_password`. |
+| output | string | yes | Destination `.pdf` path. |
+| overwrite | bool | no | Replace existing destination. Default false. |
+
+## Returns
+On success: `{ok: true, data: {output, page_count}}`
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `invalid_input` — `user_password` missing, or `output` doesn't end in `.pdf`.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### Add a password
+Call: `pdf.encrypt(path="/tmp/memo.pdf", user_password="hunter2", output="/tmp/memo-secure.pdf")`
+
+## See also
+- `pdf.decrypt` — strip the password.
+- `pdf.read` — check whether a PDF is already encrypted.
+
+</details>
+
+#### `pdf.extract_tables` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.extract_tables
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, read, tabular]
+---
+
+# pdf.extract_tables
+
+## Purpose
+Detect tables in a PDF and return their cell contents as 2-D arrays. Uses
+`pdfplumber`'s line-based detection.
+
+## When to use
+- The user asks for the rows of a table in a PDF (e.g. a financial table, a
+  rate sheet, a roster).
+- A skill needs structured tabular data that exists *inside* a PDF rather
+  than its own spreadsheet.
+
+## When NOT to use
+- For prose — use `pdf.extract_text`.
+- For data that is rendered as an image (scanned tables) — use `pdf.ocr` and
+  then parse the resulting text manually. Table detection on a scan returns
+  nothing.
+- If the source is a real `.xlsx` or `.csv`, never round-trip via PDF; use
+  `xlsx.read` directly.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pdf` file. |
+| pages | string | no | 1-based page spec; omit for every page. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    table_count: <int>,
+    tables: [
+      {page: <1-based>, index: <1-based within page>, row_count, col_count, rows: [[cell, ...], ...]},
+      ...
+    ]
+  }
+}
+```
+
+## Errors
+- `file_not_found` — path does not exist.
+- `unsupported_format` — file is not a readable PDF.
+- `dependency_missing` — `pdfplumber` is not installed.
+- `page_out_of_range` / `invalid_input` — bad `pages` spec.
+- `extraction_failed` — pdfplumber raised while parsing.
+
+## Examples
+### Tables on page 4
+Call: `pdf.extract_tables(path="/tmp/rates.pdf", pages="4")`
+
+### All tables in the document
+Call: `pdf.extract_tables(path="/tmp/rates.pdf")`
+
+## See also
+- `pdf.extract_text` — for prose content.
+- `xlsx.read` — when the source is actually a spreadsheet.
+- `pdf.see` — visually confirm where the tables are before extracting.
+
+</details>
+
+#### `pdf.extract_text` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.extract_text
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, read, text]
+---
+
+# pdf.extract_text
+
+## Purpose
+Extract the textual content of a PDF, page by page. Uses `pdfplumber` when
+available (layout-aware), falls back to `pypdf` otherwise.
+
+## When to use
+- The user wants the prose / written content of a PDF.
+- A skill needs the text body to summarise, search, or feed downstream.
+- You can scope to a page range with `pages` to keep the response small.
+
+## When NOT to use
+- For tables — use `pdf.extract_tables`; running `extract_text` on a table
+  produces a column-jumbled mess.
+- For scanned PDFs that have no embedded text layer — use `pdf.ocr`. A first
+  hint: `extract_text` returns empty strings or whitespace only.
+- To *look* at the page (e.g. understand a chart) — use `pdf.see`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pdf` file. |
+| pages | string | no | 1-based page spec, e.g. `"1"`, `"1-3"`, `"1,3-5,8"`. Omit for every page. |
+| preserve_layout | bool | no | If true and pdfplumber is available, preserves columns/whitespace. Default false. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    backend: "pdfplumber" | "pypdf",
+    page_count: <int>,
+    char_count: <int>,
+    pages: [{page: <1-based>, text: "..."}, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` — path does not exist.
+- `unsupported_format` — file is not a readable PDF.
+- `page_out_of_range` — `pages` spec references pages outside `1..page_count`.
+- `invalid_input` — `pages` spec is malformed.
+- `extraction_failed` — the backend raised while parsing the PDF.
+
+## Examples
+### Extract everything
+Call: `pdf.extract_text(path="/tmp/report.pdf")`
+
+### Extract pages 1 to 3 only
+Call: `pdf.extract_text(path="/tmp/report.pdf", pages="1-3")`
+
+### Extract with column layout preserved
+Call: `pdf.extract_text(path="/tmp/two-col.pdf", preserve_layout=true)`
+
+## See also
+- `pdf.extract_tables` — for structured tabular content.
+- `pdf.ocr` — for scanned PDFs with no text layer.
+- `pdf.see` — render pages as images to read visual content.
+
+</details>
+
+#### `pdf.fill_form` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.fill_form
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, forms]
+---
+
+# pdf.fill_form
+
+## Purpose
+Write values into the AcroForm text fields of a PDF and save the filled copy.
+
+## When to use
+- You have already called `pdf.form_fields` to get the field names, you have
+  a mapping `{field_name: value}` ready, and the user wants the filled PDF.
+
+## When NOT to use
+- Before listing the fields — you need the exact field names from
+  `pdf.form_fields`. Guessing field names produces a no-op.
+- For PDFs without AcroForm fields — the tool returns `no_form_fields`. For
+  flat scans of forms, you cannot fill them through this tool.
+- For checkbox/radio/choice fields with cryptic value sets — the catalogue
+  currently writes only string values into text fields; for richer field
+  types you'll need a more specialised tool.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the source `.pdf`. |
+| values | object | yes | Mapping of field name → value, e.g. `{"Name": "Jane"}`. |
+| output | string | yes | Destination `.pdf` path. |
+| overwrite | bool | no | Replace existing destination. Default false. |
+
+## Returns
+On success: `{ok: true, data: {output, filled_fields: ["Name", ...]}}`
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `invalid_input` — `values` empty, or `output` doesn't end in `.pdf`.
+- `no_form_fields` — PDF has no AcroForm fields to fill.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### Fill name and date
+Call: `pdf.fill_form(path="/tmp/w9.pdf", values={"Name":"Jane Doe","Date":"2026-05-24"}, output="/tmp/w9-filled.pdf")`
+
+## See also
+- `pdf.form_fields` — discover the field names first.
+- `pdf.see` — visually confirm the filled output.
+
+</details>
+
+#### `pdf.form_fields` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.form_fields
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, read, forms]
+---
+
+# pdf.form_fields
+
+## Purpose
+List the fillable form fields embedded in a PDF (AcroForm fields). Returns
+field names, types, and current values.
+
+## When to use
+- The user wants to *fill* a form and you need to know which fields exist.
+- A skill must check whether a PDF is a true fillable form vs a flat scan of one.
+
+## When NOT to use
+- For a PDF that prints out a form to fill by hand — there are no AcroForm
+  fields; you'd need to render the page with `pdf.see` and overlay the
+  values another way (out of scope here).
+- To actually write field values — use `pdf.fill_form`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the `.pdf` file. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    field_count: <int>,
+    fillable: <bool>,   // true iff at least one AcroForm field exists
+    text_fields: { "<name>": "<current value>" },
+    fields: [{name, type, value}, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### List the fields of a tax form
+Call: `pdf.form_fields(path="/tmp/w9.pdf")`
+Returns (abridged): `{ok: true, data: {field_count: 14, fillable: true, fields: [{name: "Name", type: "/Tx", value: null}, ...]}}`
+
+## See also
+- `pdf.fill_form` — write values into the fields you just discovered.
+- `pdf.see` — visually inspect form layout when field names are cryptic.
+
+</details>
+
+#### `pdf.merge` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.merge
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, combine]
+---
+
+# pdf.merge
+
+## Purpose
+Concatenate two or more PDFs into a single output file, preserving page order.
+
+## When to use
+- The user wants to "combine", "merge", or "join" several PDFs into one.
+- A skill produced multiple PDFs (e.g. one per section) and needs to deliver
+  a single document.
+
+## When NOT to use
+- To pick a subset of pages from one PDF — use `pdf.split` instead.
+- To overlay a watermark — that's a different operation; merge concatenates,
+  it does not stamp.
+- To merge a `.docx` and a `.pdf` — first convert the docx via a docx tool,
+  then merge.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| inputs | string[] | yes | At least 2 paths to existing `.pdf` files, in concat order. |
+| output | string | yes | Destination path; must end in `.pdf`. |
+| overwrite | bool | no | If true, replace an existing `output` file. Default false. |
+
+## Returns
+On success: `{ok: true, data: {output, page_count, source_count}}`
+
+## Errors
+- `file_not_found` — one of the `inputs` does not exist.
+- `unsupported_format` — one of the `inputs` is not a readable PDF.
+- `invalid_input` — fewer than 2 inputs, or `output` doesn't end in `.pdf`.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### Merge two PDFs
+Call: `pdf.merge(inputs=["/tmp/a.pdf","/tmp/b.pdf"], output="/tmp/ab.pdf")`
+
+### Merge three PDFs, replacing the destination
+Call: `pdf.merge(inputs=["/tmp/cover.pdf","/tmp/body.pdf","/tmp/appendix.pdf"], output="/tmp/full.pdf", overwrite=true)`
+
+## See also
+- `pdf.split` — extract a page range.
+- `pdf.rotate` — fix orientation before merging.
+
+</details>
+
+#### `pdf.ocr` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.ocr
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, read, ocr]
+---
+
+# pdf.ocr
+
+## Purpose
+Run Tesseract OCR over each requested page of a PDF and return the recognised
+text per page. Use only when the PDF has no embedded text layer.
+
+## When to use
+- `pdf.extract_text` returned empty / whitespace-only strings for the pages
+  the user cares about — that's the signature of a scan.
+- The user explicitly describes the PDF as a "scan" or "image-only PDF".
+
+## When NOT to use
+- For PDFs with a real text layer — use `pdf.extract_text`. OCR is much
+  slower and less accurate than reading embedded text.
+- When the tesseract binary or `pytesseract` is unavailable — the tool will
+  return `dependency_missing`; tell the user.
+- For multi-language scans without telling the tool — pass `lang="eng+fra"`
+  etc., otherwise non-default scripts come out as garbage.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the `.pdf` file. |
+| pages | string | no | 1-based page spec; omit for every page. OCR is slow — narrow when you can. |
+| lang | string | no | Tesseract language code; default `"eng"`. Examples: `"fra"`, `"deu"`, `"eng+fra"`. |
+| scale | float | no | Render scale before OCR. Default `2.0` (~200 dpi). Higher = sharper but slower. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    page_count: <int>,
+    lang: "<code>",
+    pages: [{page: <1-based>, text: "..."}, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `dependency_missing` — `pypdfium2`, `pytesseract`, or the tesseract binary
+  is not available.
+- `page_out_of_range` / `invalid_input` — bad `pages` spec.
+- `ocr_failed` — tesseract raised on a page.
+
+## Examples
+### OCR a French scan, pages 1–3
+Call: `pdf.ocr(path="/tmp/scan.pdf", pages="1-3", lang="fra")`
+
+### OCR an English scan at higher resolution
+Call: `pdf.ocr(path="/tmp/blurry.pdf", scale=3.0)`
+
+## See also
+- `pdf.extract_text` — always try this first.
+- `pdf.see` — visually confirm that the PDF is indeed a scan.
+
+</details>
+
+#### `pdf.read` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.read
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, read, metadata]
+---
+
+# pdf.read
+
+## Purpose
+Open a PDF and return its metadata, page count, and per-page geometry. Use
+this first whenever you need to know how big a PDF is or what's in it before
+calling a heavier extraction tool.
+
+## When to use
+- The user hands you a `.pdf` path and asks "what is this" or "how many pages".
+- A skill needs the page count to drive a `pages=` argument in a follow-up
+  call to `pdf.extract_text`, `pdf.split`, or `pdf.see`.
+- You suspect a PDF is encrypted and want to confirm before trying to read it.
+
+## When NOT to use
+- For text content — use `pdf.extract_text`.
+- For tables — use `pdf.extract_tables`.
+- For visually inspecting the layout — use `pdf.see` (renders pages as images).
+- For scanned PDFs that need OCR — use `pdf.ocr`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pdf` file. |
+| password | string | no | Decryption password if the PDF is encrypted. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    path: "<resolved path>",
+    page_count: <int or null if still encrypted>,
+    encrypted: <bool>,
+    metadata: { title, author, subject, creator, producer },
+    pages: [{ index, width, height, rotation }, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` — path does not exist.
+- `unsupported_format` — file does not have a `.pdf` extension or is unreadable.
+- `password_required` — PDF is encrypted and either no password was supplied,
+  or the supplied one was wrong.
+- `dependency_missing` — `pypdf` is not installed in this environment.
+
+## Examples
+### Inspect a PDF
+Call: `pdf.read(path="/tmp/loan.pdf")`
+Returns: `{ok: true, data: {page_count: 12, encrypted: false, metadata: {title: "Loan Memo"}, pages: [...]}}`
+
+### Inspect an encrypted PDF
+Call: `pdf.read(path="/tmp/secure.pdf", password="hunter2")`
+
+## See also
+- `pdf.extract_text` — the actual text content.
+- `pdf.see` — rasterise pages as images for visual inspection.
+- `pdf.decrypt` — strip encryption permanently.
+
+</details>
+
+#### `pdf.rotate` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.rotate
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, transform]
+---
+
+# pdf.rotate
+
+## Purpose
+Rotate one or more pages of a PDF by a multiple of 90 degrees and write the
+result to a new file.
+
+## When to use
+- A scanned PDF arrived with pages sideways or upside-down.
+- The user explicitly asks to rotate page N by 90/180/270 degrees.
+
+## When NOT to use
+- To resize or crop pages — rotation only changes orientation, not geometry.
+- To rotate an image embedded in the PDF — that's an image-editing task; this
+  tool rotates whole pages.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the source `.pdf`. |
+| pages | string | no | 1-based page spec to rotate. Omit to rotate every page. |
+| degrees | int | yes | One of `90`, `180`, `270`, `-90`, `-180`, `-270`. |
+| output | string | yes | Destination `.pdf` path. |
+| overwrite | bool | no | Replace existing destination. Default false. |
+
+## Returns
+On success: `{ok: true, data: {output, rotated_pages: [int, ...], degrees}}`
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input file.
+- `invalid_input` — `degrees` not in the allowed set, or `pages` spec malformed.
+- `page_out_of_range` — `pages` references pages that don't exist.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### Rotate the whole document 90° clockwise
+Call: `pdf.rotate(path="/tmp/scan.pdf", degrees=90, output="/tmp/scan-up.pdf")`
+
+### Rotate just page 3
+Call: `pdf.rotate(path="/tmp/scan.pdf", pages="3", degrees=180, output="/tmp/scan-fix.pdf")`
+
+## See also
+- `pdf.split` — extract a subset of pages.
+- `pdf.see` — confirm orientation visually.
+
+</details>
+
+#### `pdf.see` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.see
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, read, vision]
+---
+
+# pdf.see
+
+## Purpose
+Rasterise up to 5 pages of a PDF and inject them into the conversation as
+images, so the model can *look* at the page rather than only parse its text.
+
+## When to use
+- The user asks about a chart, figure, diagram, signature, stamp, or layout
+  feature that text extraction cannot recover.
+- `pdf.extract_text` returned empty / nonsensical content and you suspect a
+  scan — use `pdf.see` to confirm visually before reaching for `pdf.ocr`.
+- The user wants you to compare two pages side by side and judge visual
+  similarity.
+
+## When NOT to use
+- For the plain text body — `pdf.extract_text` is faster and feeds richer
+  content per token.
+- For tables that have an embedded text layer — `pdf.extract_tables` returns
+  the cells directly. `pdf.see` is for the visual content only.
+- To process many pages at once — this tool refuses more than 5 pages per
+  call (`too_many_pages`). Call it twice if you must, but consider whether
+  the user really needs all of them.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pdf` file. |
+| pages | string | no | 1-based page spec; max 5 pages, e.g. `"1"`, `"2-4"`, `"1,3,5"`. Omit to render page 1. |
+| scale | float | no | Render scale; `2.0` ≈ 200 dpi. Keep ≤ `3.0` to stay within model image limits. Default `2.0`. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    path: "<resolved>",
+    page_count: <total pages in document>,
+    rendered: [{page: <1-based>, bytes: <b64 length>}, ...],
+    scale: <float>
+  },
+  images: [ToolImage, ...]   // attached to the next turn as multimodal content
+}
+```
+The framework automatically appends the images to the next user turn so the
+model can see them. The `data` payload itself is the textual summary.
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `dependency_missing` — `pypdfium2` is not installed.
+- `page_out_of_range` / `invalid_input` — bad `pages` spec.
+- `too_many_pages` — more than 5 pages requested in a single call.
+- `render_failed` — the renderer raised on a specific page.
+
+## Examples
+### See page 1
+Call: `pdf.see(path="/tmp/report.pdf")`
+
+### See pages 2-4 of a deck
+Call: `pdf.see(path="/tmp/slides.pdf", pages="2-4")`
+
+### See three scattered pages
+Call: `pdf.see(path="/tmp/big.pdf", pages="1,5,12")`
+
+## See also
+- `pdf.extract_text` — far cheaper for text content.
+- `pdf.ocr` — when you need the text *of* a scanned page, not just to look at it.
+- `pdf.read` — to know `page_count` before choosing pages to render.
+
+</details>
+
+#### `pdf.split` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pdf.split
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pdf, write, split]
+---
+
+# pdf.split
+
+## Purpose
+Extract a subset of pages from a PDF into a new file. The selected pages keep
+their original order in the destination.
+
+## When to use
+- The user wants a specific page range from a larger PDF.
+- A skill needs to produce a smaller artefact (e.g. just the executive summary).
+
+## When NOT to use
+- To produce one PDF per page — call `pdf.split` once per page with the
+  desired `pages` value, or write a thin loop in your skill workflow.
+- To concatenate PDFs — use `pdf.merge`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the source `.pdf` file. |
+| pages | string | yes | 1-based page spec to keep, e.g. `"1-5"` or `"1,3,7-9"`. |
+| output | string | yes | Destination `.pdf` path. |
+| overwrite | bool | no | If true, replace an existing `output` file. Default false. |
+
+## Returns
+On success: `{ok: true, data: {output, page_count, selected_pages: [1,2,...]}}`
+
+## Errors
+- `file_not_found` — source path does not exist.
+- `unsupported_format` — file is not a readable PDF.
+- `page_out_of_range` / `invalid_input` — `pages` spec is bad.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdf` is not installed.
+
+## Examples
+### Keep pages 1 through 5
+Call: `pdf.split(path="/tmp/big.pdf", pages="1-5", output="/tmp/first5.pdf")`
+
+### Keep a scattered selection
+Call: `pdf.split(path="/tmp/big.pdf", pages="1,3,7-9", output="/tmp/sel.pdf")`
+
+## See also
+- `pdf.merge` — recombine extracts.
+- `pdf.see` — verify what is on a page before splitting.
 
 </details>
 
@@ -848,6 +1632,7 @@ Call: `xlsx.read(path="/data/loans.csv")`
 ## By tag
 
 - **catalog** — `repo.read_catalog`, `repo.search_catalog`
+- **combine** — `pdf.merge`
 - **dedup** — `repo.search_catalog`
 - **deterministic** — `text.extract_lines`, `text.word_count`
 - **diagnostic** — `core.echo`
@@ -855,20 +1640,28 @@ Call: `xlsx.read(path="/data/loans.csv")`
 - **docstore** — `docstore.fetch`
 - **extract** — `text.extract_lines`
 - **fetch** — `docstore.fetch`
+- **forms** — `pdf.fill_form`, `pdf.form_fields`
 - **internal-docs** — `docstore.fetch`
 - **meta** — `orchestrator.delegate`, `orchestrator.list_packs`
+- **metadata** — `pdf.read`
 - **metrics** — `text.word_count`
 - **numeric** — `text.extract_lines`
+- **ocr** — `pdf.ocr`
 - **pack-authoring** — `repo.scaffold_pack`
-- **read** — `docstore.fetch`, `repo.read_catalog`, `repo.read_doc`, `xlsx.read`
+- **pdf** — `pdf.decrypt`, `pdf.encrypt`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.fill_form`, `pdf.form_fields`, `pdf.merge`, `pdf.ocr`, `pdf.read`, `pdf.rotate`, `pdf.see`, `pdf.split`
+- **read** — `docstore.fetch`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.form_fields`, `pdf.ocr`, `pdf.read`, `pdf.see`, `repo.read_catalog`, `repo.read_doc`, `xlsx.read`
 - **reference** — `repo.read_catalog`, `repo.read_doc`
 - **routing** — `orchestrator.delegate`, `orchestrator.list_packs`
 - **scaffold** — `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
 - **search** — `repo.search_catalog`
+- **security** — `pdf.decrypt`, `pdf.encrypt`
 - **skill-authoring** — `repo.scaffold_skill`
 - **smoke-test** — `core.echo`
+- **split** — `pdf.split`
 - **spreadsheet** — `xlsx.read`
-- **tabular** — `xlsx.read`
-- **text** — `text.extract_lines`, `text.word_count`
+- **tabular** — `pdf.extract_tables`, `xlsx.read`
+- **text** — `pdf.extract_text`, `text.extract_lines`, `text.word_count`
 - **tool-authoring** — `repo.scaffold_tool`
-- **write** — `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
+- **transform** — `pdf.rotate`
+- **vision** — `pdf.see`
+- **write** — `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`

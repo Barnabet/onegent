@@ -1,0 +1,25 @@
+name: pdf_handling
+version: 0.1.0
+owner: team-doc-ai
+
+requires_tools:
+  - pdf.read
+  - pdf.extract_text
+  - pdf.extract_tables
+  - pdf.merge
+  - pdf.split
+  - pdf.rotate
+  - pdf.encrypt
+  - pdf.decrypt
+  - pdf.ocr
+  - pdf.form_fields
+  - pdf.fill_form
+  - pdf.see
+
+classification: internal
+data_sources:
+  - user_attachments
+
+permissions:
+  - fs.read
+  - fs.write
