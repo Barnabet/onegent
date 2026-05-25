@@ -3,7 +3,7 @@
 Generated from skills/*/SKILL.md frontmatter. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**6 skills.**
+**8 skills.**
 
 ## `credit_memo` &nbsp; <sub>v0.1.0</sub>
 
@@ -13,9 +13,17 @@ Use this skill when the user asks you to draft, prepare, or assemble a credit me
 
 Use this skill when the user asks for a connectivity / smoke-test of the agent platform — typically phrases like "say hi", "ping", "smoke test", "are you alive". The skill calls a no-op echo tool to prove the tool plumbing works end-to-end, then reports success.
 
+## `html_reporting` &nbsp; <sub>v0.1.0</sub>
+
+Use this skill whenever a sub-agent needs to produce a **report** as a deliverable and the user did NOT request a specific other file format (`.pdf`, `.pptx`, `.docx`, `.xlsx`). HTML is the default reporting format on this platform — single-file, self-contained, print-ready, WCAG-aware, and richer than Markdown for anything past ~100 lines. This skill also covers reading and rendering existing `.html` / `.htm` files (extract text, page screenshots, PDF export). The supervisor (router) should append this skill via `extra_skills` to any sub-agent it estimates will produce a report. Do not use this skill for short chat replies, code snippets, or single tables — those should stay as plain text or use the spreadsheet skill.
+
 ## `pdf_handling` &nbsp; <sub>v0.1.0</sub>
 
 Use this skill whenever the user gives you a `.pdf` path or asks to do anything with a PDF — read it, extract text or tables, look at a page, merge / split / rotate, encrypt or decrypt, fill a form, OCR a scan, or **author a brand-new PDF report / summary / one-pager from structured data** (use `pdf.create`). Append this skill on top of whatever pack is running; it composes cleanly with other skills. Do not use this skill for `.docx`, `.pptx`, or `.xlsx` files — there are (or will be) dedicated skills for those.
+
+## `pptx_handling` &nbsp; <sub>v0.1.0</sub>
+
+Use this skill whenever the user gives you a `.pptx` path or asks to do anything with a PowerPoint deck — read it, extract text or speaker notes, look at a slide, merge / split decks, convert to PDF, or **author a brand-new presentation / pitch / deck from structured data** (use `pptx.create`). Trigger on any mention of "slides", "deck", "presentation", or a `.pptx` filename, regardless of what the user plans to do with the content afterwards. Append this skill on top of whatever pack is running; it composes cleanly with other skills. Do not use this skill for `.pdf`, `.docx`, or `.xlsx` files — there are dedicated skills for those.
 
 ## `router` &nbsp; <sub>v0.4.0</sub>
 

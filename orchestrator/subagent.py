@@ -60,7 +60,10 @@ def build_system_prompt(
     parts.append(
         "You are a CIB Gen-AI sub-agent. Follow the loaded skills exactly. "
         "Use the provided tools by name; do not invent tools. When a skill's "
-        "workflow tells you to call a tool, call it. Be concise."
+        "workflow tells you to call a tool, call it. Be concise. "
+        "Prioritize parallel tool calls: whenever you need multiple tool "
+        "calls that do not depend on each other's outputs, issue them "
+        "together in a single response rather than sequentially."
     )
     parts.append("")
     parts.append(f"Pack: {bound.pack.name} (v{bound.pack.version})")

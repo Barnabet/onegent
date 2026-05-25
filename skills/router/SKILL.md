@@ -109,8 +109,40 @@ narrowest one that fits the task.
      in your system prompt. Include only the files the sub-agent
      actually needs. Omit (or pass `null`) to forward every attached
      file; pass `[]` to forward none.
+   - `extra_skills` — see the *Default deliverable format* rule below.
+     If the sub-task is likely to produce a **report / write-up / memo /
+     analysis** and the user did NOT specify a file format, add
+     `"html_reporting"` to `extra_skills` (or include it in
+     `skills=[...]` for skills-only delegations). HTML is this
+     platform's default reporting format.
 
-3. **After delegation:**
+## Default deliverable format
+
+When a sub-agent's output is going to be a *written deliverable* (more
+than a one-paragraph chat reply), the supervisor picks the format:
+
+1. **The user named a format** (`.pdf`, `.pptx` / "deck" / "slides",
+   `.xlsx` / "spreadsheet", `.docx`): use that format's skill —
+   `pdf_handling`, `pptx_handling`, `xlsx_handling` respectively. Do
+   NOT add `html_reporting`.
+2. **The user did NOT name a format** and the task is one of:
+   status update / weekly report / audit / post-mortem / research
+   summary / analysis write-up / decision doc / project plan /
+   "tell me about X" beyond a few sentences / any other multi-section
+   report → add `"html_reporting"` to `extra_skills` (or include in
+   `skills=[...]`). HTML is the default because it is single-file,
+   self-contained, print-ready, and richer than Markdown past ~100
+   lines.
+3. **The task is a short chat reply, a single number, a tiny table,
+   or a code snippet**: do NOT add `html_reporting`. Plain text /
+   Markdown is the right answer.
+
+Never add more than one of `html_reporting` / `pdf_handling` /
+`pptx_handling` as the *output* skill — pick one. (You may still add
+the others as *input-reading* skills if the sub-agent needs to read
+from those formats.)
+
+3. **After delegation** (continuing the workflow):
    - If `ok: true`: read `data.final_text`. Either quote it verbatim
      (preferred for short, polished replies) or paraphrase it briefly
      for the user. Do not add information the sub-agent did not produce.

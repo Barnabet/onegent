@@ -1,6 +1,5 @@
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, type FileMeta } from "@/lib/api";
 import {
   File as FileIcon,
@@ -72,17 +71,15 @@ export function FilesSidebar({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Paperclip className="size-4" />
-          Files
-          <span className="text-xs font-normal text-muted-foreground ml-auto">
-            {files.length}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-3 min-h-0">
+    <div className="h-full flex flex-col min-h-0 min-w-0 rounded-xl border bg-card p-4">
+      <div className="flex items-center gap-2 text-sm font-medium pb-3">
+        <Paperclip className="size-4" />
+        Files
+        <span className="text-xs font-normal text-muted-foreground ml-auto">
+          {files.length}
+        </span>
+      </div>
+      <div className="flex-1 flex flex-col gap-3 min-h-0">
         <input
           ref={inputRef}
           type="file"
@@ -155,7 +152,7 @@ export function FilesSidebar({
             );
           })}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

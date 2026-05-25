@@ -1,0 +1,23 @@
+name: pptx_handling
+version: 0.1.0
+owner: team-doc-ai
+
+requires_tools:
+  - pptx.read
+  - pptx.extract_text
+  - pptx.extract_notes
+  - pptx.merge
+  - pptx.split
+  - pptx.convert
+  - pptx.see
+  - pptx.create
+  - pptx.from_html
+  - pptx.from_html_editable
+
+classification: internal
+data_sources:
+  - user_attachments
+
+permissions:
+  - fs.read
+  - fs.write

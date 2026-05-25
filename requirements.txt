@@ -13,4 +13,17 @@ python-multipart>=0.0.9,<1
 pypdf>=5.0,<7
 pdfplumber>=0.11,<1
 pypdfium2>=4.0,<6
-reportlab>=4.0,<5  # pdf.create — author PDFs from scratch
+# PPTX domain. python-pptx covers read/write/create. Visual rendering
+# (pptx.see, pptx.convert) additionally needs LibreOffice (`soffice`) on
+# PATH and pypdfium2 (already pinned above for pdf.see).
+python-pptx>=1.0,<2
+# HTML domain. weasyprint is the primary renderer for `pdf.create` and
+# `html.to_pdf`; LibreOffice (`soffice`) is the fallback. WeasyPrint
+# additionally requires Pango+Cairo system libs (mac: `brew install pango`;
+# debian: `apt-get install libpango-1.0-0 libpangoft2-1.0-0`).
+weasyprint>=66,<70
+# pptx.from_html_editable uses Playwright (headless Chromium) to
+# resolve real layout + computed styles before rebuilding each slide
+# with native python-pptx shapes. After `pip install playwright` run
+# `python -m playwright install chromium` once to fetch the browser.
+playwright>=1.45,<2

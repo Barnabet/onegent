@@ -38,15 +38,21 @@ def test_router_pack_loads_and_binds():
         "router",
         "pdf_handling",
         "xlsx_handling",
+        "pptx_handling",
+        "html_reporting",
     ]
-    # Routing tools are always bound; file-read tools come from pdf_handling
-    # and xlsx_handling so the router can do small read-only info-gathering.
+    # Routing tools are always bound; file-read tools come from pdf_handling,
+    # xlsx_handling, pptx_handling, and html_reporting so the router can do
+    # small read-only info-gathering on each attachment type and pick the
+    # right output format.
     assert {"orchestrator.delegate"} <= set(bound.tools)
     # The retired list_* tools must NOT be bound.
     assert "orchestrator.list_packs" not in bound.tools
     assert "orchestrator.list_skills" not in bound.tools
     assert "pdf.read" in bound.tools
     assert "xlsx.read" in bound.tools
+    assert "pptx.read" in bound.tools
+    assert "html.create" in bound.tools
 
 
 def test_delegate_forwards_all_files_by_default():
@@ -342,7 +348,7 @@ def test_delegate_pack_plus_extra_skills_merges_dedup():
     assert res.ok
     bound_names = [s.frontmatter.name for s in captured["bound"].skills]
     # Pack skills come first, extras appended; duplicates dropped.
-    assert bound_names == ["router", "pdf_handling", "xlsx_handling"]
+    assert bound_names == ["router", "pdf_handling", "xlsx_handling", "pptx_handling", "html_reporting"]
 
 
 def test_delegate_unknown_skill_fails_cleanly():

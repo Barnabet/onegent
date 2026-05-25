@@ -25,9 +25,9 @@ export function Layout() {
   const currentSecondary = SECONDARY.find((n) => location.pathname.startsWith(n.to));
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <header className="border-b">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
+    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+      <header className="border-b shrink-0">
+        <div className="px-6 h-14 flex items-center justify-between gap-4">
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <img src="/logo.png" alt="CIB Agents" className="size-7 rounded" />
             <span className="font-semibold tracking-tight">CIB Agents</span>
@@ -85,7 +85,7 @@ export function Layout() {
           </nav>
         </div>
       </header>
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
+      <main className="flex-1 min-h-0 w-full px-6 py-6 overflow-hidden">
         <Outlet />
       </main>
       <Toaster richColors position="top-right" />

@@ -684,16 +684,11 @@ def see(params, ctx: ToolCtx) -> ToolResult:
 
 
 # ---------------------------------------------------------------------------
-# pdf.create — author a brand-new PDF from a structured element list
+# pdf.create — render a complete HTML document (string or file) to PDF
 # ---------------------------------------------------------------------------
 
 
 def create(params, ctx: ToolCtx) -> ToolResult:
-    try:
-        import reportlab  # noqa: F401
-    except ImportError:
-        return _err("dependency_missing", "reportlab is not installed.")
-
     out = Path(params.output)
     if out.suffix.lower() != ".pdf":
         return _err("invalid_input", "`output` must end in .pdf.")
@@ -704,13 +699,21 @@ def create(params, ctx: ToolCtx) -> ToolResult:
         )
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    if not isinstance(params.elements, list) or not params.elements:
-        return _err("invalid_input", "`elements` must be a non-empty list.")
+    if not (params.html or "").strip():
+        return _err(
+            "invalid_input",
+            "`html` is required: pass a complete HTML document or the path "
+            "to a .html/.htm file.",
+        )
 
     from . import create as _engine
 
     try:
         data = _engine.build(params, out)
+    except _engine._DependencyMissing as e:
+        return _err("dependency_missing", str(e))
+    except ValueError as e:
+        return _err("invalid_input", str(e))
     except Exception as e:
         return _err("create_failed", f"PDF build failed: {e}")
     return ToolResult(ok=True, data=data)

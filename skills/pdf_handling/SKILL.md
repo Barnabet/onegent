@@ -48,7 +48,7 @@ table; each entry maps to a single tool call.
 | Remove password | `pdf.decrypt(path=..., password=..., output=...)` |
 | Inspect a form's fields | `pdf.form_fields(path=...)` |
 | Fill a form | `pdf.form_fields` first, then `pdf.fill_form(values={...}, output=...)` |
-| **Author a brand-new PDF** (report, summary, presentation) | `pdf.create(output=..., elements=[...])` |
+| **Author a brand-new PDF** (report, summary, one-pager) | `pdf.create(output=..., html="<!doctype html>…")` — write a complete HTML document (or pass a `.html` file path). |
 
 ### The standard sequence for "tell me about this PDF"
 
@@ -82,38 +82,77 @@ report, summary, presentation, one-pager, memo, KPI dashboard, etc.).
 "the user can export from Excel"** — `pdf.create` exists exactly so you
 can deliver the PDF directly.
 
+**What `pdf.create` is.** A renderer. You supply a complete HTML
+document, it renders it to PDF using WeasyPrint (LibreOffice fallback).
+The tool does **not** wrap fragments, inject styling, or override your
+`@page` rule — the document you write is the document that gets
+printed. That gives you the full design surface of a modern browser
+*plus* the CSS Paged Media extensions: named pages, running headers and
+footers, page counters, repeated table headers, custom page sizes,
+embedded web fonts, full-bleed covers.
+
+The tool takes one input either way:
+
+- **A complete HTML string** — must start with `<!doctype html>` and
+  include `<html>` / `<head>` / `<body>`. Put your `@page` rule and
+  styling in a `<style>` block in the head. The full design crash
+  course is in `tools/pdf/cards/create.md`.
+- **A path to a `.html` / `.htm` file** — e.g. one produced by
+  `html.create`. Strings ≤ 1 KB that look like a file path are treated
+  as such; everything else is treated as raw HTML.
+
+Workflow:
+
 1. **Gather the data first.** If the source is a spreadsheet, use
    `xlsx.sql` to pre-aggregate the numbers you want to show (totals,
    top-N, breakdowns); don't dump raw rows into the PDF. If the source
    is another PDF or text, use `pdf.extract_text` / `extract_tables`.
-2. **Plan the structure.** A good general-purpose layout:
-   - `cover` with title/subtitle/tagline
-   - `heading` (level 1) "Executive summary" + a short `paragraph`
-   - `kpi_row` of 3–6 headline numbers
-   - one or two `table`s (style `"zebra"`) for the supporting detail
-   - optional `chart` (`kind: "bar"` / `"line"` / `"pie"`) if there is
-     a meaningful comparison to show
-   - `callout` (`variant: "note"` or `"warning"`) for caveats
-3. **Pick a theme.** Default `"professional"` for business reports,
-   `"modern"` for product/marketing, `"minimal"` for technical docs,
-   `"vibrant"` only when explicitly asked for something colourful.
+2. **Decide the design.** Pick page size (`A4` for EU, `letter` for
+   US; landscape / custom for one-pagers and posters), margin, font,
+   and palette. For a multi-page document plan a running header and
+   page counter in the `@page` rule.
+3. **Compose the HTML.** Two good patterns:
+   - **From scratch.** Start with `<!doctype html><html><head><style>
+     @page { … }</style></head><body>…</body></html>` and build the
+     content directly. Use CSS Grid / Flex for KPI rows, `<table>` for
+     tabular data, inline SVG for vector charts.
+   - **From `html.create`.** Call `html.create(elements=[…],
+     path="/tmp/draft.html")` to get a themed, well-structured report
+     on disk, then read it, splice in your own `@page` rule / fonts /
+     palette tweaks, save under a new path, and pass that path to
+     `pdf.create`. Fastest way to get a polished result.
 4. **Call `pdf.create`** with `output=<same-dir-as-source>/<name>.pdf`
-   and `page_numbers=true` for anything multi-page.
-5. **Verify**. If the user might want to check the look, follow up with
-   `pdf.see(path=<output>, pages="1")` so they see the cover rendered.
+   and your HTML (or path). Set `title=` / `author=` / `subject=` for
+   searchable PDF metadata. Use `overwrite=true` only if the user
+   explicitly asked to replace the file.
+5. **Verify.** If the user might want to check the look, follow up
+   with `pdf.see(path=<output>, pages="1")` so they see the cover
+   rendered.
 
 Notes:
-- Cells in `table.rows` can be plain strings *or* contain inline
-  markup (`<b>`, `<i>`, `<font color='#...'>`, `<sub>`, `<super>`,
-  `<br/>`, `<link>`). Unicode sub/super characters are converted
-  automatically; you do not need to special-case `H₂O` or `m²`.
-- For numbers, format them yourself before passing them in (`"$1,234.56"`,
-  `"12.4%"`); the tool does not auto-format.
+- **CSS Paged Media is your friend.** `@page { @top-left { content:
+  "…" } @bottom-right { content: counter(page) " / " counter(pages) }
+  }` gives you running headers and page counters with no JavaScript
+  and no template engine. `break-inside: avoid` keeps cards intact.
+  `thead { display: table-header-group }` repeats table headers on
+  every page. `page: cover; break-before: page` swaps page geometry
+  per section.
+- **Web fonts work.** `<link rel="stylesheet"
+  href="https://fonts.googleapis.com/...">` or `@font-face` with a
+  `woff2` URL. Subset-embedded in the PDF.
+- **Format numbers yourself** (`"$1,234.56"`, `"12.4%"`) — the tool
+  doesn't auto-format anything.
 - For very large tables (> ~30 rows), summarise the long tail in a
   trailing row ("… plus 412 more") rather than paginating manually.
 - If the user asks for an Excel-to-PDF "export", do NOT round-trip
-  through Excel. Read the workbook, build the PDF from the data with
+  through Excel. Read the workbook, build the HTML, render with
   `pdf.create`.
+- **`dependency_missing` from `pdf.create`** usually means WeasyPrint's
+  native libs (Pango/Cairo) are absent. The error message includes
+  the exact install line. The auto fallback to LibreOffice handles
+  this transparently in most environments — but `@page` margin boxes
+  (running headers, page counters) are silently dropped on that path,
+  and a warning is attached to the result.
 
 ### Forms
 
@@ -171,7 +210,10 @@ Notes:
 ## References
 
 - The Anthropic upstream `pdf` skill (in `anthropic-skills/skills/pdf/`)
-  documents the underlying Python libraries (pypdf, pdfplumber, reportlab,
+  documents the underlying Python libraries (pypdf, pdfplumber,
   pypdfium2). This skill exposes the same capabilities as tool calls
   (including PDF authoring via `pdf.create`); do not shell out or write
   Python yourself.
+- `pdf.create` is a thin HTML→PDF renderer on top of WeasyPrint
+  (LibreOffice fallback). See `tools/pdf/cards/create.md` for the full
+  design crash course and `tools/pdf/create.py` for the implementation.

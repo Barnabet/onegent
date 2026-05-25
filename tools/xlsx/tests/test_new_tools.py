@@ -536,9 +536,21 @@ def test_recalc_unsupported_format(tmp_path):
     assert not r.ok and r.error.code == "unsupported_format"
 
 
+def _soffice_is_usable() -> bool:
+    bin_ = shutil.which("soffice") or shutil.which("libreoffice")
+    if not bin_:
+        return False
+    import subprocess
+    try:
+        proc = subprocess.run([bin_, "--version"], capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
 @pytest.mark.skipif(
-    shutil.which("soffice") is None and shutil.which("libreoffice") is None,
-    reason="LibreOffice not installed",
+    not _soffice_is_usable(),
+    reason="LibreOffice not installed or not launchable",
 )
 def test_recalc_materialises_formula(tmp_path):
     openpyxl = pytest.importorskip("openpyxl")

@@ -355,82 +355,153 @@ def test_see_default_first_page(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# pdf.create — author a brand-new PDF from a structured element list
+# pdf.create — render a complete HTML document to PDF via WeasyPrint
+# (LibreOffice as a fallback). Tests that need a real PDF renderer are
+# skipped when neither backend is available.
 # ---------------------------------------------------------------------------
 
 
-def test_create_minimal(tmp_path):
+def _has_renderer() -> bool:
+    """True when at least one of WeasyPrint or LibreOffice is usable."""
+    import shutil
+    import subprocess
+    # Try LibreOffice — but only if `soffice --version` actually runs
+    # (catches the macOS broken-symlink / quarantined-app case).
+    bin_ = shutil.which("soffice") or shutil.which("libreoffice")
+    if bin_:
+        try:
+            if subprocess.run([bin_, "--version"], capture_output=True, timeout=10).returncode == 0:
+                return True
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    # Try WeasyPrint via the same helper that pdf.create uses, so the
+    # native-lib auto-discovery has already run.
+    try:
+        from tools.pdf.create import _ensure_native_lib_path
+        _ensure_native_lib_path()
+        import weasyprint  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+_RENDERER_AVAILABLE = _has_renderer()
+
+
+_MIN_DOC = (
+    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<title>T</title><style>@page{size:A4;margin:18mm}</style>"
+    "</head><body><h1>Hi</h1></body></html>"
+)
+
+
+@pytest.mark.skipif(not _RENDERER_AVAILABLE, reason="no PDF renderer available")
+def test_create_minimal_html_string(tmp_path):
     tool_registry.discover()
     out = tmp_path / "out.pdf"
     r = tool_registry.call(
         "pdf.create",
-        {"output": str(out), "elements": [{"type": "title", "text": "Hi"}]},
+        {"output": str(out), "html": _MIN_DOC},
         _ctx(),
     )
     assert r.ok, r.error
     assert out.is_file()
-    assert r.data["page_count"] == 1
+    assert r.data["page_count"] >= 1
     assert r.data["size_bytes"] > 100
+    assert r.data["engine"] in {"weasyprint", "libreoffice"}
+    assert out.read_bytes()[:4] == b"%PDF"
 
 
-def test_create_rich_document(tmp_path):
-    """Exercise covers, KPIs, callouts, tables, charts, diagrams, columns,
-    timelines, badges, sub/super unicode, and themes in one go."""
+@pytest.mark.skipif(not _RENDERER_AVAILABLE, reason="no PDF renderer available")
+def test_create_from_html_file_path(tmp_path):
+    """`html=` accepts an absolute path to a .html file on disk."""
     tool_registry.discover()
-    out = tmp_path / "rich.pdf"
+    src = tmp_path / "source.html"
+    src.write_text(
+        "<!doctype html><html><head><title>From file</title>"
+        "<style>@page{size:letter;margin:0.75in}</style></head>"
+        "<body><h1>Hello</h1><p>From a file.</p></body></html>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "frompath.pdf"
+    r = tool_registry.call(
+        "pdf.create",
+        {"output": str(out), "html": str(src)},
+        _ctx(),
+    )
+    assert r.ok, r.error
+    assert out.read_bytes()[:4] == b"%PDF"
+
+
+@pytest.mark.skipif(not _RENDERER_AVAILABLE, reason="no PDF renderer available")
+def test_create_respects_custom_page_geometry(tmp_path):
+    """The agent's own @page rule must win — we don't override it."""
+    tool_registry.discover()
+    out = tmp_path / "wide.pdf"
+    # Landscape A4 with no margin: page width must come back as ~842pt
+    # (A4 long side) not the WeasyPrint default of letter portrait.
     r = tool_registry.call(
         "pdf.create",
         {
             "output": str(out),
-            "theme": "professional",
-            "title": "Report",
-            "author": "test",
-            "page_numbers": True,
-            "header": {"left": "Confidential", "right": "Draft"},
-            "footer": "© 2026",
-            "elements": [
-                {"type": "cover", "title": "Q1 Report", "subtitle": "Inventory", "tagline": "v1"},
-                {"type": "heading", "level": 1, "text": "Summary"},
-                {"type": "paragraph", "text": "Total H₂O at temperature T² rose."},
-                {"type": "kpi_row", "items": [
-                    {"label": "Products", "value": "1,000"},
-                    {"label": "Categories", "value": "8", "color": "#10b981"},
-                ]},
-                {"type": "callout", "variant": "warning", "title": "Note", "text": "Stale data."},
-                {"type": "table", "style": "zebra", "rows": [
-                    ["A", "B", "C"],
-                    ["1", "2", "3"],
-                    ["4", "5", "6"],
-                ]},
-                {"type": "chart", "kind": "bar",
-                 "labels": ["Q1", "Q2"], "data": [[10, 20]]},
-                {"type": "diagram", "layout": "horizontal", "nodes": [
-                    {"id": "a", "label": "A"}, {"id": "b", "label": "B"},
-                ], "edges": [{"from": "a", "to": "b"}]},
-                {"type": "columns", "columns": [
-                    [{"type": "paragraph", "text": "left"}],
-                    [{"type": "paragraph", "text": "right"}],
-                ]},
-                {"type": "timeline", "items": [{"title": "Step 1"}, {"title": "Step 2"}]},
-                {"type": "badges", "items": [{"text": "ok"}, {"text": "warn", "color": "#f59e0b"}]},
-                {"type": "page_break"},
-                {"type": "heading", "level": 2, "text": "Appendix"},
-                {"type": "quote", "text": "It works.", "attribution": "us"},
-            ],
+            "html": (
+                "<!doctype html><html><head><meta charset='utf-8'>"
+                "<style>@page{size:A4 landscape;margin:0}"
+                "body{margin:0;background:#000;color:#fff;"
+                "width:297mm;height:210mm}</style></head>"
+                "<body><h1>Wide</h1></body></html>"
+            ),
         },
         _ctx(),
     )
     assert r.ok, r.error
-    assert r.data["page_count"] >= 2          # cover forces a page break, then content
-    assert r.data["element_count"] == 14
-    assert r.data["theme"] == "professional"
+
+    # Only WeasyPrint reliably honours @page size; LibreOffice may not.
+    if r.data["engine"] != "weasyprint":
+        pytest.skip("page-size check only meaningful on WeasyPrint")
+
+    from pypdf import PdfReader
+    page = PdfReader(str(out)).pages[0]
+    box = page.mediabox
+    width = float(box.width)
+    height = float(box.height)
+    # A4 landscape: 842 x 595 pt. Allow a 2pt slop.
+    assert width > height, f"expected landscape, got {width}x{height}"
+    assert abs(width - 842.0) < 3, f"expected ~842pt width, got {width}"
+    assert abs(height - 595.0) < 3, f"expected ~595pt height, got {height}"
+
+
+@pytest.mark.skipif(not _RENDERER_AVAILABLE, reason="no PDF renderer available")
+def test_create_sets_pdf_metadata(tmp_path):
+    tool_registry.discover()
+    out = tmp_path / "meta.pdf"
+    r = tool_registry.call(
+        "pdf.create",
+        {
+            "output": str(out),
+            "html": _MIN_DOC,
+            "title": "Custom Title",
+            "author": "Test Author",
+            "subject": "Test Subject",
+        },
+        _ctx(),
+    )
+    assert r.ok, r.error
+    if r.data["engine"] != "weasyprint":
+        pytest.skip("metadata kwargs are WeasyPrint-specific")
+
+    from pypdf import PdfReader
+    meta = PdfReader(str(out)).metadata or {}
+    assert meta.get("/Title") == "Custom Title"
+    assert meta.get("/Author") == "Test Author"
+    assert meta.get("/Subject") == "Test Subject"
 
 
 def test_create_requires_pdf_extension(tmp_path):
     tool_registry.discover()
     r = tool_registry.call(
         "pdf.create",
-        {"output": str(tmp_path / "out.txt"), "elements": [{"type": "title", "text": "x"}]},
+        {"output": str(tmp_path / "out.txt"), "html": _MIN_DOC},
         _ctx(),
     )
     assert not r.ok
@@ -443,28 +514,64 @@ def test_create_no_overwrite(tmp_path):
     out.write_bytes(b"%PDF-1.4 stub")
     r = tool_registry.call(
         "pdf.create",
-        {"output": str(out), "elements": [{"type": "title", "text": "x"}]},
+        {"output": str(out), "html": _MIN_DOC},
         _ctx(),
     )
     assert not r.ok
     assert r.error.code == "output_exists"
 
 
-def test_create_empty_elements_fails(tmp_path):
+def test_create_requires_html(tmp_path):
     tool_registry.discover()
     r = tool_registry.call(
         "pdf.create",
-        {"output": str(tmp_path / "out.pdf"), "elements": []},
+        {"output": str(tmp_path / "a.pdf")},
+        _ctx(),
+    )
+    # Pydantic-level rejection (missing required field) is also fine —
+    # in either case the tool layer reports invalid_input.
+    assert not r.ok
+    assert r.error.code == "invalid_input"
+
+
+def test_create_rejects_html_fragment(tmp_path):
+    """Fragments are rejected so the agent's @page rule has a chance."""
+    tool_registry.discover()
+    r = tool_registry.call(
+        "pdf.create",
+        {
+            "output": str(tmp_path / "frag.pdf"),
+            "html": "<h1>Hi</h1><p>Just a fragment.</p>",
+        },
         _ctx(),
     )
     assert not r.ok
     assert r.error.code == "invalid_input"
 
 
-def test_create_unicode_subsuper_normalization():
-    """The engine must rewrite Unicode sub/super into <sub>/<super> tags
-    so the built-in fonts don't render black boxes."""
-    from tools.pdf.create import _normalize_unicode_subsuper
-    assert _normalize_unicode_subsuper("H₂O") == "H<sub>2</sub>O"
-    assert _normalize_unicode_subsuper("x² + y²") == "x<super>2</super> + y<super>2</super>"
-    assert _normalize_unicode_subsuper("plain") == "plain"
+def test_create_rejects_missing_html_file(tmp_path):
+    tool_registry.discover()
+    r = tool_registry.call(
+        "pdf.create",
+        {
+            "output": str(tmp_path / "x.pdf"),
+            "html": str(tmp_path / "does-not-exist.html"),
+        },
+        _ctx(),
+    )
+    assert not r.ok
+    assert r.error.code == "invalid_input"
+
+
+def test_create_unknown_engine(tmp_path):
+    tool_registry.discover()
+    r = tool_registry.call(
+        "pdf.create",
+        {
+            "output": str(tmp_path / "x.pdf"),
+            "html": _MIN_DOC,
+            "engine": "ghostscript",
+        },
+        _ctx(),
+    )
+    assert not r.ok and r.error.code == "invalid_input"

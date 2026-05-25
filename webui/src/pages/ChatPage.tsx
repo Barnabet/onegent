@@ -23,7 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { EventCard } from "@/components/EventCard";
 import { JsonBlock } from "@/components/JsonBlock";
 import { Markdown } from "@/components/Markdown";
-import { Send, Loader2, Database, Sparkles } from "lucide-react";
+import { Send, Loader2, Database, Sparkles, PanelLeft } from "lucide-react";
 import { toast } from "sonner";
 
 /** Per-turn view-model: the user message, the run handle, the live events,
@@ -44,6 +44,7 @@ export function ChatPage() {
   const [input, setInput] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [convOpen, setConvOpen] = useState(false);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
   // ---- conversation list -------------------------------------------------
@@ -98,10 +99,15 @@ export function ChatPage() {
     })();
   }, [activeId]);
 
-  // Auto-scroll to latest turn.
+  // Auto-scroll to latest turn. The transcript lives inside Radix' ScrollArea,
+  // so the actual scrollable element is the [data-slot="scroll-area-viewport"]
+  // ancestor of our content div.
   useEffect(() => {
     const el = transcriptRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const viewport = el.closest('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+    const target = viewport ?? el;
+    target.scrollTop = target.scrollHeight;
   }, [turns]);
 
   // ---- conversation actions ----------------------------------------------
@@ -292,23 +298,49 @@ export function ChatPage() {
   // ---- render ------------------------------------------------------------
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_280px] gap-6 h-[calc(100vh-7rem)]">
-      {/* Left sidebar — conversations */}
-      <aside className="min-h-0">
-        <ConversationsSidebar
-          conversations={conversations}
-          activeId={activeId}
-          onSelect={setActiveId}
-          onCreate={createConversation}
-          onRename={renameConversation}
-          onDelete={deleteConversation}
-        />
-      </aside>
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px] gap-8 h-full max-w-[1600px] mx-auto">
+      {/* Conversations drawer — slides in from the left edge */}
+      <Sheet open={convOpen} onOpenChange={setConvOpen}>
+        <SheetContent side="left" className="w-80 p-0 border-r" showCloseButton={false}>
+          <SheetHeader className="sr-only">
+            <SheetTitle>Conversations</SheetTitle>
+          </SheetHeader>
+          <div className="h-full p-3">
+            <ConversationsSidebar
+              conversations={conversations}
+              activeId={activeId}
+              onSelect={(id) => {
+                setActiveId(id);
+                setConvOpen(false);
+              }}
+              onCreate={() => {
+                createConversation();
+                setConvOpen(false);
+              }}
+              onRename={renameConversation}
+              onDelete={deleteConversation}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Main column — chat */}
-      <section className="flex flex-col min-h-0">
-        <ScrollArea className="flex-1 -mx-2 px-2">
-          <div ref={transcriptRef} className="space-y-6 pb-4">
+      <section className="flex flex-col min-h-0 min-w-0">
+        {/* Toolbar above the transcript */}
+        <div className="pb-3 flex items-center gap-2 max-w-3xl mx-auto w-full">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setConvOpen(true)}
+            className="gap-2"
+          >
+            <PanelLeft className="size-4" />
+            Conversations
+            <span className="text-xs text-muted-foreground">({conversations.length})</span>
+          </Button>
+        </div>
+        <ScrollArea className="flex-1 min-h-0 -mx-2 px-2">
+          <div ref={transcriptRef} className="space-y-6 pb-4 max-w-3xl mx-auto w-full">
             {turns.length === 0 && <EmptyState />}
             {turns.map((t, i) => (
               <TurnView
@@ -322,7 +354,7 @@ export function ChatPage() {
         </ScrollArea>
 
         {/* Composer */}
-        <div className="pt-3 mt-3 border-t">
+        <div className="pt-3 mt-3 border-t max-w-3xl mx-auto w-full">
           <Label htmlFor="msg" className="sr-only">
             Message
           </Label>
@@ -362,7 +394,7 @@ export function ChatPage() {
       </section>
 
       {/* Right sidebar — files in the conversation */}
-      <aside className="hidden lg:block min-h-0">
+      <aside className="hidden lg:block min-h-0 min-w-0 overflow-hidden">
         <FilesSidebar
           files={files}
           uploading={uploading}
@@ -448,8 +480,26 @@ function TurnView({
     return topLevel[topLevel.length - 1]?.delta ?? "";
   }, [turn.events, turn.assistant_text]);
 
-  // Hide raw model_text from the activity list — the bubble shows the final.
-  const interiorEvents = turn.events.filter((e) => e.type !== "model_text");
+  // Hide events that don't render as their own row in the activity list:
+  //  - `model_text`: the reply itself is shown below
+  //  - `done`: sub-agent lifecycle bookkeeping (EventCard returns null)
+  //  - `tool_result`: folded into the matching `tool_call` row (one entry
+  //     per call that grows a checkmark / X once the result arrives)
+  const interiorEvents = turn.events.filter(
+    (e) =>
+      e.type !== "model_text" &&
+      e.type !== "done" &&
+      e.type !== "tool_result",
+  );
+
+  // call_id → tool_result, so the merged tool_call row can show outcome.
+  const resultByCall = useMemo(() => {
+    const m = new Map<string, RunEvent>();
+    for (const e of turn.events) {
+      if (e.type === "tool_result" && e.call_id) m.set(e.call_id, e);
+    }
+    return m;
+  }, [turn.events]);
   const isRunning = !turn.finished && isLast && running;
 
   return (
@@ -471,26 +521,26 @@ function TurnView({
           </summary>
           <div className="space-y-1.5 mt-2">
             {interiorEvents.map((e, i) => (
-              <EventCard key={i} event={e} />
+              <EventCard
+                key={i}
+                event={e}
+                result={e.call_id ? resultByCall.get(e.call_id) : undefined}
+              />
             ))}
           </div>
         </details>
       )}
 
-      {/* Assistant bubble */}
+      {/* Assistant reply — no bubble, just text in the flow */}
       {finalText && (
-        <div className="flex justify-start">
-          <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-muted px-4 py-2.5">
-            <Markdown>{finalText}</Markdown>
-          </div>
+        <div className="px-1">
+          <Markdown>{finalText}</Markdown>
         </div>
       )}
 
       {isRunning && (
-        <div className="flex justify-start">
-          <div className="rounded-2xl rounded-bl-md bg-muted px-4 py-2.5 text-sm text-muted-foreground inline-flex items-center gap-2">
-            <Loader2 className="size-3.5 animate-spin" /> thinking...
-          </div>
+        <div className="px-1 text-sm text-muted-foreground inline-flex items-center gap-2">
+          <Loader2 className="size-3.5 animate-spin" /> thinking...
         </div>
       )}
 

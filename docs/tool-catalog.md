@@ -3,7 +3,7 @@
 Generated from the live tool registry. Do not edit by hand.
 Re-render with `python scripts/check_catalog.py --write`.
 
-**32 tools** across **7 domains**.
+**46 tools** across **9 domains**.
 
 ## By domain
 
@@ -131,6 +131,500 @@ Call: `docstore.fetch(query="acme-credit-input")`
 
 </details>
 
+### `html`
+
+#### `html.create` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: html.create
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [html, write, create, report]
+---
+
+# html.create
+
+## Purpose
+Author a **single-file, dependency-free, print-ready** HTML report from
+a structured list of elements. The output:
+
+- ships as one `.html` file with **inline CSS**, **inline SVG charts**,
+  **base64-embedded images**, **system fonts**, and **no network calls** —
+  works offline forever (the "single-file rule" from Anthropic's
+  HTML-as-default guidance, May 2026);
+- includes a `@media print` block so `Ctrl+P` (or `html.to_pdf`)
+  produces a clean A4 PDF with hidden chrome, repeated table headers,
+  and proper page-break-avoidance on cards and rows;
+- is **WCAG-aware**: semantic headings, focus-visible outlines, ≥ 4.5:1
+  contrast on every theme, descriptive `alt` text required on images.
+
+Prefer this over hand-rolling HTML or writing Python templates: it bakes
+in the visual conventions (cover, KPIs, callouts, SVG charts, timelines,
+collapsibles, page-printable layout) and produces reports that look
+authored rather than templated.
+
+## When to use
+- The user (or supervisor) decides the output should be a **report** —
+  a status update, audit, analysis writeup, research summary, decision
+  doc, weekly report, project plan, or any other multi-section
+  deliverable — and did not explicitly ask for `.pdf`, `.pptx`,
+  `.xlsx`, or `.docx`.
+- A skill needs to materialise structured findings (KPIs, tables,
+  bullets, narrative) as a shareable artifact.
+
+## When NOT to use
+- The user asked for a specific other format — use `pdf.create`,
+  `pptx.create`, or `xlsx.write` instead.
+- The output is a one-paragraph reply, a code snippet, a small table,
+  or a chat answer — just answer in plain text.
+- The output is meant to be edited collaboratively in Git — Markdown is
+  better for that.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| output | string | yes | Destination `.html` / `.htm` path. Parent dirs are created. |
+| elements | object[] | yes | Ordered element list (see below). |
+| title | string | no | Document `<title>`. |
+| theme | string \| object | no | Theme name or custom palette. Default `"professional"`. |
+| header | string \| object | no | Optional on-screen page header. Hidden when printing. |
+| footer | string \| object | no | Optional on-screen page footer. Hidden when printing. |
+| max_width | int | no | Max content width in pixels for the on-screen layout. Default 920. |
+| author | string | no | Document metadata: author. |
+| subject | string | no | Document metadata: subject / description. |
+| overwrite | bool | no | If true, replace the output file if it already exists. |
+
+## Themes
+`default`, `professional`, `modern`, `minimal`, `vibrant`, `dark`, or
+a custom palette object with the following keys (all hex strings):
+`primary`, `secondary`, `accent`, `text`, `muted`, `surface`, `border`,
+`background`, `success`, `warning`, `danger`, `info`. Missing keys
+inherit from the `default` theme.
+
+## Element types
+Every element is `{"type": "<name>", ...fields}`.
+
+| type | required fields | notes |
+|---|---|---|
+| `cover` | `title` | `subtitle`, `tagline`. Use exactly once at the top. |
+| `title` | `text` | `subtitle`. Lighter than `cover`; use for sub-pages. |
+| `heading` | `text` | `level` 1-4 (default 2), optional `id` for TOC anchors. |
+| `paragraph` | `text` | `style`: `lead`/`muted`/`small`; `align`. |
+| `bullets` | `items: [str]` | Inline markup allowed in items. |
+| `numbered` | `items: [str]` | Same. |
+| `callout` | `text` | `variant`: `info`/`tip`/`note`/`success`/`warning`/`danger`; `title`. |
+| `quote` | `text` | `attribution`. |
+| `banner` | `text` (or `title`) | `subtitle`. Full-width tinted block. |
+| `kpi_row` | `items: [{label, value, delta?, direction?}]` | 2-6 cards. `direction`: `up`/`down` for delta colour. |
+| `card` | — | `title`, `text`, `children: [element, ...]`. |
+| `columns` | `columns: [[element, ...], ...]` | 2-4 columns of nested elements. |
+| `badges` | `items: [str \| {text, color?}]` | Pill tags. |
+| `table` | `rows: [[cell, ...], ...]` | `header` (bool, default true), `caption`, `aligns`. |
+| `chart` | `kind`, `labels`, `data` | `kind`: `bar`/`line`/`pie`. `series_names`. Pure inline SVG. |
+| `timeline` | `items: [{when?, title?, text?}]` | Vertical bullet timeline. |
+| `hrule` | — | Horizontal rule. |
+| `spacer` | — | `height` in px (default 12). |
+| `image` | `path`, `alt` | `caption`, `width`. Embedded as base64. `alt` is required (pass `"decorative"` for purely decorative imagery). |
+| `raw_html` | `html` | Escape-hatch for advanced HTML. Trust boundary: do not pass untrusted input. |
+| `page_break` | — | Forces a print page break (no effect on screen). |
+| `toc` | `items: [str \| {text, href}]` | `title`. Use with `heading` `id` anchors. |
+| `details` | `summary` | `text`, `children`, `open` (bool). Collapsible. |
+
+Inline markup in any text field: `<b>`, `<i>`, `<u>`, `<code>`, `<br>`,
+`<a href="...">`. Anything else is HTML-escaped.
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    output: "<absolute path>",
+    size_bytes: <int>,
+    theme: "<name>|custom",
+    elements_rendered: ["cover", "kpi_row", ...],
+    element_count: <int>,
+    self_contained: true
+  }
+}
+```
+
+## Errors
+- `invalid_input` — `output` doesn't end in `.html` / `.htm`, or `elements` is empty.
+- `output_exists` — destination exists and `overwrite=false`.
+- `create_failed` — a renderer raised. The message includes the element index and type.
+
+## Examples
+### Weekly status report
+Call:
+```
+html.create(
+  output="/tmp/status-2026-05-24.html",
+  title="Project Lighthouse — Weekly Status",
+  theme="professional",
+  header={"left": "Project Lighthouse", "right": "Week 21 · 2026"},
+  footer={"center": "Confidential — internal"},
+  elements=[
+    {"type": "cover", "title": "Weekly Status",
+     "subtitle": "Project Lighthouse · Week 21, 2026",
+     "tagline": "Prepared by the platform team"},
+    {"type": "toc", "items": [
+      {"text": "Headline numbers", "href": "kpis"},
+      {"text": "What shipped", "href": "shipped"},
+      {"text": "Risks", "href": "risks"},
+      {"text": "Next week", "href": "next"}
+    ]},
+    {"type": "heading", "level": 2, "id": "kpis", "text": "Headline numbers"},
+    {"type": "kpi_row", "items": [
+      {"label": "Active users", "value": "12,430", "delta": "+8.2% WoW", "direction": "up"},
+      {"label": "P99 latency",  "value": "184 ms",  "delta": "-12 ms",   "direction": "up"},
+      {"label": "Error rate",   "value": "0.21%",   "delta": "+0.04 pp", "direction": "down"},
+      {"label": "Open bugs",    "value": "17"}
+    ]},
+    {"type": "chart", "kind": "line",
+     "title": "Daily active users — last 14 days",
+     "labels": ["M","T","W","T","F","S","S","M","T","W","T","F","S","S"],
+     "data": [[9120, 9410, 9550, 9610, 9700, 7800, 7920, 9800, 10100, 10250, 10400, 10560, 8900, 9050]],
+     "series_names": ["DAU"]},
+    {"type": "heading", "level": 2, "id": "shipped", "text": "What shipped"},
+    {"type": "bullets", "items": [
+       "Audit-log export endpoint (closes <code>#PL-412</code>)",
+       "SSO retry-with-fresh-token flow",
+       "Dashboard empty-state copy refresh"
+    ]},
+    {"type": "heading", "level": 2, "id": "risks", "text": "Risks"},
+    {"type": "callout", "variant": "warning", "title": "EU launch dependency",
+     "text": "Vendor contract still in legal review; blocks the Jun 3 cut-off."},
+    {"type": "heading", "level": 2, "id": "next", "text": "Next week"},
+    {"type": "timeline", "items": [
+      {"when": "Mon", "title": "Ship rate-limit config UI"},
+      {"when": "Wed", "title": "Decision review: data residency"},
+      {"when": "Fri", "title": "Cut release candidate"}
+    ]}
+  ]
+)
+```
+
+### Compact audit report
+Call:
+```
+html.create(
+  output="/tmp/audit.html",
+  title="Q4 access audit",
+  theme="minimal",
+  elements=[
+    {"type": "title", "text": "Q4 access audit",
+     "subtitle": "Conducted 2026-05-24"},
+    {"type": "callout", "variant": "success",
+     "title": "Overall result",
+     "text": "No critical findings. Two informational items follow."},
+    {"type": "table", "header": true,
+     "rows": [
+       ["#", "Finding", "Severity", "Status"],
+       ["1", "Stale service account in <code>billing-prod</code>", "Info", "Removed"],
+       ["2", "Two admins missing MFA enrolment date", "Info", "Confirmed enrolled"]
+     ],
+     "aligns": ["right", "left", "center", "center"]}
+  ]
+)
+```
+
+## See also
+- `html.see` — render the resulting report as page images for visual
+  QA. **Always do this once and look for the issues listed in the
+  `html_reporting` skill QA checklist.**
+- `html.to_pdf` — export the same HTML to a PDF.
+- `pdf.create` — when the user explicitly asked for PDF.
+- `pptx.create` — when the user explicitly asked for a slide deck.
+
+</details>
+
+#### `html.extract_text` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: html.extract_text
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [html, read, text]
+---
+
+# html.extract_text
+
+## Purpose
+Extract the readable text content of an HTML file. Strips `<script>`,
+`<style>`, and template/noscript blocks; preserves block-level
+structure with line breaks; collapses whitespace. Image `alt` text is
+rendered inline as `[image: <alt>]` so it isn't lost.
+
+## When to use
+- The user asks "what does this HTML say" / "summarise this page".
+- A skill needs the body text to feed into summarisation, translation,
+  or comparison.
+- You want to re-flow an HTML report's content into a different format
+  (e.g. an email).
+
+## When NOT to use
+- For element counts or metadata — use `html.read` (cheaper).
+- For visual layout, charts, or rendered styles — use `html.see`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.html` / `.htm` file. |
+| max_chars | int | no | Cap on returned text. Result is truncated and `truncated=true` set when hit. Default 50000. Pass 0 to disable. |
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    title: <str|null>,
+    text: <str>,
+    char_count: <int>,
+    truncated: <bool>
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `parse_failed` — HTML parse error.
+
+## Examples
+### Full body
+Call: `html.extract_text(path="/tmp/audit.html")`
+
+### Quick first page
+Call: `html.extract_text(path="/tmp/long-report.html", max_chars=4000)`
+
+## See also
+- `html.read` — title and counts only.
+- `html.see` — image render when layout matters.
+
+</details>
+
+#### `html.read` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: html.read
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [html, read, metadata]
+---
+
+# html.read
+
+## Purpose
+Open an HTML file and return its `<title>`, byte size, element counts
+(headings, paragraphs, tables, images, links, `<script>`, `<style>`),
+and whether it is **self-contained** (no remote stylesheets, scripts, or
+images). Use this first to size up an HTML document before extracting
+or rendering it.
+
+## When to use
+- The user hands you a `.html` / `.htm` path and asks "what is this".
+- You produced an HTML report via `html.create` and want to confirm the
+  output is single-file and dependency-free before sharing it.
+- A skill needs the title or section counts to drive a follow-up call.
+
+## When NOT to use
+- For the readable body text — use `html.extract_text`.
+- To rasterise pages for visual inspection — use `html.see`.
+- To convert to PDF — use `html.to_pdf`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.html` or `.htm` file. |
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    path: "<resolved>",
+    title: <str|null>,
+    size_bytes: <int>,
+    self_contained: <bool>,    // true ⇒ no external stylesheets/scripts/img URLs
+    counts: { headings, paragraphs, tables, images, links, scripts, styles }
+  }
+}
+```
+
+## Errors
+- `file_not_found` — path does not exist.
+- `unsupported_format` — file does not have a `.html` / `.htm` extension or could not be decoded.
+- `parse_failed` — the HTML parser raised; the message includes the cause.
+
+## Examples
+### Inspect a report
+Call: `html.read(path="/tmp/q4-status.html")`
+
+## See also
+- `html.extract_text` — readable body text.
+- `html.see` — render pages as images for visual QA.
+- `html.to_pdf` — export to a print-quality PDF.
+
+</details>
+
+#### `html.see` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: html.see
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [html, read, vision]
+---
+
+# html.see
+
+## Purpose
+Rasterise up to 5 pages of an HTML file and inject them into the
+conversation as images, so the model can *look* at the report rather
+than only parse its text. Mirrors `pdf.see` / `pptx.see` for HTML files:
+under the hood the file is converted to PDF once (`soffice --convert-to
+pdf`), then the selected pages are rendered with `pypdfium2`.
+
+The page numbers refer to the **print pagination** of the document
+(the same paginator that `@media print` uses). For reports authored
+with `html.create`, that gives stable per-page screenshots that match
+what the user would see in a printed copy.
+
+## When to use
+- Verifying your own output after `html.create`. **Always do this once
+  and look for layout issues (see the html_reporting skill QA checklist).**
+- The user asks "show me what page 2 looks like" or "is this readable?".
+- You suspect the HTML mis-renders (overflowing tables, broken charts).
+
+## When NOT to use
+- For the readable text — `html.extract_text` is far cheaper.
+- To process many pages at once — this tool refuses more than 5 pages
+  per call (`too_many_pages`).
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.html` / `.htm` file. |
+| pages | string | no | 1-based page spec; max 5, e.g. `"1"`, `"2-4"`, `"1,3,5"`. Omit to render page 1 only. |
+| scale | float | no | Render scale; `2.0` ≈ 200dpi. Keep ≤ `3.0`. Default `2.0`. |
+| timeout_seconds | int | no | LibreOffice subprocess hard limit (default 120). |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    path: "<resolved>",
+    page_count: <int>,                     // total pages in the printed pagination
+    rendered: [{ page: <1-based>, bytes: <b64 length> }, ...],
+    scale: <float>
+  },
+  images: [ToolImage, ...]                  // attached to the next turn as multimodal content
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `dependency_missing` — `pypdfium2` is not installed, or `soffice` is not on `PATH`.
+- `page_out_of_range` / `invalid_input` — bad `pages` spec.
+- `too_many_pages` — more than 5 pages requested in a single call.
+- `timeout` / `convert_failed` — LibreOffice failed.
+- `render_failed` — `pypdfium2` raised on a specific page.
+
+## Examples
+### See page 1 (the default)
+Call: `html.see(path="/tmp/report.html")`
+
+### See pages 2-4
+Call: `html.see(path="/tmp/report.html", pages="2-4")`
+
+### See three scattered pages
+Call: `html.see(path="/tmp/long.html", pages="1,3,5")`
+
+## See also
+- `html.create` — author the HTML in the first place.
+- `html.extract_text` — cheap text-only inspection.
+- `html.to_pdf` — keep the PDF instead of just page images.
+
+</details>
+
+#### `html.to_pdf` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: html.to_pdf
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [html, write, convert]
+---
+
+# html.to_pdf
+
+## Purpose
+Convert an HTML file to PDF using LibreOffice (`soffice`) in headless
+mode. Honours the `@media print` rules of the document, so reports
+authored with `html.create` (which always emits a print-ready CSS block)
+produce a clean A4 PDF with proper page breaks, hidden page chrome, and
+table headers repeated on each page.
+
+## When to use
+- The user wants the report as a PDF (for email, signature, archival).
+- A downstream skill needs a paginated copy (e.g. to attach to a memo).
+- You want a fixed-layout snapshot of an interactive HTML artifact.
+
+## When NOT to use
+- For per-page image renders — use `html.see`.
+- For tiny tweaks to an existing PDF — use the `pdf.*` family instead.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.html` / `.htm` file. |
+| output | string | yes | Destination `.pdf` path. |
+| overwrite | bool | no | If true, replace the output file if it already exists. |
+| timeout_seconds | int | no | Hard limit on the LibreOffice subprocess (default 120). |
+
+## Returns
+```
+{
+  ok: true,
+  data: { output: "<path>", size_bytes: <int> }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `invalid_input` — `output` does not end in `.pdf`.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — LibreOffice (`soffice`) is not on `PATH`.
+- `timeout` / `convert_failed` — LibreOffice failed.
+
+## Examples
+### Export
+Call: `html.to_pdf(path="/tmp/report.html", output="/tmp/report.pdf")`
+
+## See also
+- `html.create` — author the HTML in the first place (it ships with a
+  `@media print` block that this tool relies on).
+- `html.see` — image renders for visual verification.
+- `pdf.see`, `pdf.extract_text` — operate on the resulting PDF.
+
+</details>
+
 ### `orchestrator`
 
 #### `orchestrator.delegate` &nbsp; <sub>v1 · public · owner: team-platform-ai</sub>
@@ -236,7 +730,7 @@ Returns: `{ok: true, data: {pack: null, skills: ["pdf_handling", "xlsx_handling"
 
 ---
 tool: pdf.create
-version: 1
+version: 3
 owner: team-doc-ai
 classification: [internal]
 tags: [pdf, write, create, report]
@@ -245,164 +739,288 @@ tags: [pdf, write, create, report]
 # pdf.create
 
 ## Purpose
-Author a brand-new PDF from a structured list of elements. Handles
-covers, headings, paragraphs, tables (zebra / minimal / grid), bullets,
-numbered lists, callouts (info / tip / note / success / warning /
-danger), quotes, banners, KPI rows, cards, multi-column layouts,
-badges / pills, bar / line / pie charts, flow diagrams, timelines,
-images, raw shapes, horizontal rules, spacers, and explicit page
-breaks. Pick a theme (default, professional, modern, minimal, vibrant,
-dark) or pass a custom theme with `primary`/`secondary`/`accent`/
-`text`/`muted`/`surface`/`border` hex colours.
+Render a complete HTML document to PDF in **one tool call**. You write
+the HTML (and CSS), `pdf.create` puts it on paper. The tool does **not**
+wrap fragments, inject a theme, override your `@page` rule, or force any
+print colours — what you write is what gets rendered.
 
-Prefer this over shelling out to `reportlab` yourself: it already knows
-the styling, the page templates, and the Unicode gotchas (sub/super
-characters are auto-converted to `<sub>`/`<super>` tags so they don't
-render as black boxes).
+The renderer is **WeasyPrint** (fallback: **LibreOffice headless** when
+WeasyPrint's native libs are missing). WeasyPrint implements CSS Paged
+Media, so the full design vocabulary of a modern browser is available
+*plus* paged-media features browsers don't expose. See "Design surface"
+below.
 
 ## When to use
-- The user asks for a PDF report, summary, presentation, memo, or
-  one-pager.
-- A skill needs to materialise a structured output (KPIs, tables,
-  charts, narrative sections) as a deliverable file.
+- The user wants a PDF deliverable: report, summary, one-pager, memo,
+  proposal, brochure, certificate, invoice, dashboard print-out, etc.
+- You have structured data (from `xlsx.sql`, `pdf.extract_text`, etc.)
+  and want to present it as a polished, paginated document.
+- You authored an HTML report with `html.create` and now want a
+  printable PDF copy of the same content — pass that file's path here.
 
 ## When NOT to use
-- To modify an existing PDF: use `pdf.merge`, `pdf.split`, `pdf.rotate`,
-  `pdf.fill_form`, etc.
-- To "export" an Excel file as PDF: build the PDF from the *data* with
-  this tool, don't try to round-trip a `.xlsx`.
-- For raster output (PNG/JPG): not supported — render the PDF and use
-  `pdf.see` if you need page images.
+- Slide deck → use `pptx.create`.
+- Web-shareable artefact → use `html.create` (skip the PDF step).
+- Fillable PDF form → use `pdf.fill_form` on an existing template.
+- The user wants Word output → use `docx.create`.
 
 ## Parameters
-| name | type | required | description |
-|---|---|---|---|
-| output | string | yes | Destination `.pdf` path. Must end in `.pdf`. |
-| elements | object[] | yes | Ordered list of element objects (see below). |
-| theme | string \| object | no | Theme name or custom palette. Default `"default"`. |
-| page_size | string | no | `"letter"` (default), `"A4"`, or `"legal"`. |
-| margin | float | no | Uniform page margin in points. Default `54` (= 0.75 inch). |
-| title | string | no | PDF metadata: title. |
-| author | string | no | PDF metadata: author. |
-| subject | string | no | PDF metadata: subject. |
-| header | string \| object | no | Page header. String → centred. Object → `{left, center, right}`. |
-| footer | string \| object | no | Page footer. Same shape as `header`. |
-| page_numbers | bool | no | If true, draw `Page N` in the footer-right of every page. |
-| overwrite | bool | no | If true, replace the output file if it already exists. |
 
-## Element types
+You must provide:
 
-Each element is `{"type": "<name>", ...fields}`.
+- `output` — destination `.pdf` path. Parent dirs are created.
+- `html` — **either** a complete HTML document as a string, **or** an
+  absolute path to a `.html` / `.htm` file on disk.
 
-| type | required fields | notable optional fields |
-|---|---|---|
-| `cover` | `title` | `subtitle`, `tagline`, `accent` |
-| `title` | `text` | `subtitle` |
-| `heading` | `text`, `level` (1/2/3) | — |
-| `paragraph` | `text` | `align` (`left`/`right`/`center`/`justify`), `style` (`body`/`lead`/`small`/`muted`) |
-| `bullets` | `items: [text, ...]` | `style` (`dot`/`dash`/`check`) |
-| `numbered` | `items: [text, ...]` | — |
-| `callout` | `text` | `variant` (`info`/`tip`/`note`/`success`/`warning`/`danger`), `title` |
-| `quote` | `text` | `attribution` |
-| `banner` | `text` | `subtitle`, `color` |
-| `kpi_row` | `items: [{label, value, delta?, color?}, ...]` | — |
-| `card` | — | `title`, `text`, `color`, `children: [element, ...]` |
-| `columns` | `columns: [[element, ...], ...]` | `gap` (points) |
-| `badges` | `items: [{text, color?}, ...]` | — |
-| `table` | `rows: [[cell, ...], ...]` | `header` (bool, default true), `style` (`zebra`/`minimal`/`grid`), `col_widths`, `aligns` |
-| `chart` | `kind` (`bar`/`line`/`pie`), `data`, `labels` | `series_names`, `title`, `height` |
-| `diagram` | `nodes: [{id, label, color?}], edges: [{from, to, label?}]` | `layout` (`horizontal`/`vertical`) |
-| `timeline` | `items: [{title, text?}, ...]` | — |
-| `shape` | `shape` (`rect`/`circle`/`line`/`arrow`) | `width`, `height`, `color`, `fill` |
-| `image` | `path` | `width`, `height`, `caption` |
-| `spacer` | — | `height` (points; default 12) |
-| `hrule` | — | `color` |
-| `page_break` | — | — |
+Anything ≤ 1 KB, single-line, ending in `.html`/`.htm` is treated as a
+path. Everything else is treated as raw HTML. Raw HTML **must** start
+with `<!doctype html>` and contain an `<html>` element — fragments are
+rejected, on purpose, because fragments can't declare an `@page` rule.
 
-### Inline markup (any text field)
-- `<b>bold</b>`, `<i>italic</i>`, `<u>underline</u>`
-- `<sub>...</sub>`, `<super>...</super>` (Unicode sub/super are auto-converted)
-- `<br/>` for a line break
-- `<font color='#rrggbb'>...</font>` for inline colour
-- `<link href='https://...'>text</link>` for hyperlinks
+Optional:
+
+- `title`, `author`, `subject` — PDF metadata (search indexers see
+  these). If omitted, WeasyPrint picks up `<title>` from the HTML.
+- `engine` — `auto` (default) | `weasyprint` | `libreoffice`.
+- `timeout_seconds` — kill switch for the LibreOffice subprocess.
+- `overwrite` — replace an existing output file.
 
 ## Returns
-```
+
+```jsonc
 {
   ok: true,
   data: {
-    output: "<absolute path>",
-    page_count: <int|null>,
+    output:     "<path>",
     size_bytes: <int>,
-    element_count: <int>,
-    theme: "<name>|custom",
-    page_size: "letter|A4|legal"
+    page_count: <int>,
+    engine:     "weasyprint" | "libreoffice",
+    warnings:   [<string>, ...]    // e.g. fallback notes
   }
 }
 ```
 
 ## Errors
-- `invalid_input` — `output` does not end in `.pdf`, or `elements` is empty.
-- `output_exists` — destination already exists and `overwrite=false`.
-- `dependency_missing` — reportlab is not installed.
-- `create_failed` — the PDF build raised (the message includes the cause).
+
+- `invalid_input` — `output` is not a `.pdf` path, `html` is missing/empty,
+  the supplied `.html` file doesn't exist, or a raw-HTML string isn't a
+  complete document (no `<!doctype html>` / `<html>` tag).
+- `output_exists` — destination file exists and `overwrite=false`.
+- `dependency_missing` — both engines unavailable. Usually WeasyPrint's
+  native libs (Pango/Cairo) missing; the message names the install
+  command for mac/debian.
+- `create_failed` — engine-level failure (catch-all). The message
+  includes the underlying cause.
+
+## Design surface
+
+You have the full design freedom of a modern browser plus the
+paged-media extensions. The features below are the ones that *survive
+print* — the ones agents most commonly under-use.
+
+### Page geometry — set whatever you want
+```html
+<style>
+  @page { size: A4; margin: 18mm; }                  /* A4 portrait     */
+  @page { size: A4 landscape; margin: 12mm; }        /* landscape       */
+  @page { size: letter; margin: 0.75in; }            /* US letter       */
+  @page { size: 297mm 420mm; margin: 0; }            /* A3, full bleed  */
+  @page { size: 1080px 1920px; margin: 0; }          /* social-story    */
+  @page { size: 5.5in 8.5in; margin: 14mm 16mm; }    /* half-letter     */
+</style>
+```
+
+### Named pages — different geometry per section
+```html
+<style>
+  @page cover    { size: A4; margin: 0; }
+  @page content  { size: A4; margin: 22mm 18mm 26mm 18mm;
+                   @bottom-right { content: counter(page) " / " counter(pages); } }
+  .cover  { page: cover;  }
+  .body   { page: content; }
+  .body   { break-before: page; }    /* start content on a fresh page */
+</style>
+```
+
+### Running headers & footers, page counters
+```css
+@page {
+  @top-left     { content: "Q4 Inventory Report"; font: 9pt sans-serif; color: #6b7280; }
+  @top-right    { content: string(section);       font: 9pt sans-serif; color: #6b7280; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9pt sans-serif; }
+}
+h2 { string-set: section content(); }   /* live "current section" feed */
+```
+
+The 16 margin boxes (`@top-left-corner`, `@top-left`, `@top-center`,
+`@top-right`, `@top-right-corner`, and the matching `@bottom-*`,
+`@left-*`, `@right-*`) are all available. Use `:left` / `:right` /
+`:first` page pseudo-selectors for mirrored or chapter-opening pages.
+
+### Page-break control
+```css
+.kpi-grid, .card  { break-inside: avoid; }     /* never split a card    */
+h2                { break-before: page; }      /* each section new page */
+table             { break-inside: auto; }
+thead             { display: table-header-group; }  /* repeat on each page */
+tfoot             { display: table-footer-group; }
+```
+
+### Fonts — embedded subsets, web fonts
+```html
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+
+  /* Or self-host: */
+  @font-face {
+    font-family: 'Suisse';
+    src: url('https://your.cdn/SuisseIntl.woff2') format('woff2');
+    font-weight: 400 700;
+  }
+</style>
+```
+
+Fonts are subset-embedded, so the PDF stays small and looks identical
+on any reader.
+
+### Full bleed, backgrounds, gradients, shadows
+```css
+@page { size: A4; margin: 0; }
+.cover {
+  width: 210mm; height: 297mm;
+  background: linear-gradient(135deg, #0f172a 0%, #4338ca 100%);
+  color: white;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: 28mm 22mm;
+}
+.cover h1 { font-size: 56pt; letter-spacing: -0.02em; }
+```
+
+### Modern layout — Grid & Flex
+```css
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12mm;
+}
+.kpi      { background: #f8fafc; border-radius: 6mm; padding: 8mm; }
+.kpi .v   { font-size: 28pt; font-weight: 700; color: #0f172a; }
+.kpi .d   { color: #16a34a; font-size: 10pt; }
+```
+
+### Two-column body text
+```css
+.body-prose { column-count: 2; column-gap: 8mm; column-rule: 1px solid #e5e7eb; }
+```
+
+### Internal links & TOC
+```html
+<a href="#findings">Jump to findings →</a>
+<h2 id="findings">Findings</h2>
+```
+WeasyPrint emits a clickable PDF link plus an entry in the bookmark
+tree (use `<h1>`/`<h2>` ordering — bookmarks are auto-generated).
+
+### SVG, images, charts
+SVG embeds as vectors (sharp at any zoom). Inline charts produced by
+any JS-free path (vega-lite render, matplotlib → SVG, server-side
+Chart.js → SVG) drop straight in. Raster images are subset to the
+output DPI.
+
+## Pattern: lean on `html.create` for the skeleton
+When you need a structured report but want full design control, the
+fastest path is:
+
+1. Use `html.create(elements=[…], path="/tmp/draft.html")` to get a
+   themed, well-structured HTML report on disk.
+2. Open it (read it back), tweak the `<style>` block / add your `@page`
+   rules, save under a new path.
+3. Call `pdf.create(html="/tmp/final.html", output="…")`.
+
+This gives you `html.create`'s charts, tables, KPI rows, callouts, etc.
+*and* unrestricted design control.
 
 ## Examples
 
-### One-pager with KPIs and a table
-Call:
+### Minimal — a memo
 ```
 pdf.create(
-  output="/tmp/inventory-summary.pdf",
-  theme="professional",
-  page_numbers=true,
-  title="Retail Inventory Summary",
-  elements=[
-    {"type": "cover", "title": "Retail Inventory", "subtitle": "Q1 Summary", "tagline": "Generated from 01 Retail Inventory.xlsx"},
-    {"type": "heading", "level": 1, "text": "Key figures"},
-    {"type": "kpi_row", "items": [
-      {"label": "Products", "value": "1,000"},
-      {"label": "Categories", "value": "8"},
-      {"label": "Stock value (retail)", "value": "$3.42M", "color": "#10b981"},
-      {"label": "Low stock", "value": "149", "color": "#ef4444"}
-    ]},
-    {"type": "heading", "level": 2, "text": "Top 10 by retail value"},
-    {"type": "table", "style": "zebra", "rows": [
-      ["SKU", "Category", "On hand", "Retail value"],
-      ["A-001", "Apparel", "320", "$48,000"],
-      ["B-014", "Footwear", "210", "$41,200"]
-    ]}
-  ]
+  output="/tmp/memo.pdf",
+  html="""<!doctype html><html><head><meta charset="utf-8">
+    <title>Field Memo</title>
+    <style>
+      @page { size: A4; margin: 22mm;
+              @bottom-right { content: counter(page); font: 9pt sans-serif; color: #6b7280; } }
+      body  { font: 11pt/1.55 'Helvetica Neue', sans-serif; color: #111827; }
+      h1    { font-size: 22pt; margin: 0 0 6mm; color: #0f172a; }
+      .meta { color: #6b7280; font-size: 9.5pt; margin-bottom: 10mm; }
+    </style></head><body>
+    <h1>Field memo — Q4 inventory</h1>
+    <p class="meta">2026-01-08 · CIB Gen-AI</p>
+    <p>Stock cover dropped 14% in November on the back of …</p>
+  </body></html>"""
 )
 ```
 
-### Chart and diagram
-Call:
+### Full-bleed cover + paginated body
 ```
 pdf.create(
-  output="/tmp/architecture.pdf",
-  elements=[
-    {"type": "title", "text": "System architecture"},
-    {"type": "diagram", "layout": "horizontal", "nodes": [
-      {"id": "u", "label": "User"},
-      {"id": "a", "label": "API"},
-      {"id": "d", "label": "DB"}
-    ], "edges": [
-      {"from": "u", "to": "a"},
-      {"from": "a", "to": "d"}
-    ]},
-    {"type": "chart", "kind": "bar",
-     "labels": ["Jan", "Feb", "Mar"],
-     "data": [[120, 150, 180]],
-     "series_names": ["Signups"], "title": "Quarterly signups"}
-  ]
+  output="/tmp/report.pdf",
+  title="Retail Inventory Report",
+  author="CIB Gen-AI",
+  html="""<!doctype html><html><head><meta charset="utf-8">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap">
+    <style>
+      @page cover   { size: A4; margin: 0; }
+      @page content { size: A4; margin: 22mm 18mm 28mm 18mm;
+                      @top-left  { content: "Retail Inventory Report"; font: 9pt 'Inter'; color: #6b7280; }
+                      @bottom-right { content: counter(page) " / " counter(pages); font: 9pt 'Inter'; color: #6b7280; } }
+      body { font: 10.5pt/1.55 'Inter', sans-serif; color: #111827; margin: 0; }
+      .cover { page: cover;
+               width: 210mm; height: 297mm;
+               background: radial-gradient(circle at 20% 0%, #312e81, #0f172a 70%);
+               color: white; padding: 32mm 24mm; box-sizing: border-box;
+               display: flex; flex-direction: column; justify-content: flex-end; }
+      .cover h1 { font-size: 56pt; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+      .cover p  { font-size: 14pt; opacity: 0.8; }
+      .body  { page: content; break-before: page; }
+      h2     { font-size: 18pt; margin: 14mm 0 4mm; color: #0f172a; }
+      .kpis  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6mm; }
+      .kpi   { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 4mm;
+               padding: 6mm; break-inside: avoid; }
+      .kpi .v { font-size: 24pt; font-weight: 700; }
+      .kpi .l { color: #6b7280; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.04em; }
+    </style></head><body>
+    <section class="cover">
+      <h1>Retail Inventory</h1><p>Q4 2025 · CIB Gen-AI</p>
+    </section>
+    <section class="body">
+      <h2>At a glance</h2>
+      <div class="kpis">
+        <div class="kpi"><div class="l">SKUs</div><div class="v">1,042</div></div>
+        <div class="kpi"><div class="l">Categories</div><div class="v">8</div></div>
+        <div class="kpi"><div class="l">On-hand $</div><div class="v">$4.2M</div></div>
+        <div class="kpi"><div class="l">Stockouts</div><div class="v">37</div></div>
+      </div>
+    </section>
+  </body></html>"""
+)
+```
+
+### Convert an `html.create` report to PDF
+```
+pdf.create(
+  output="/tmp/q4-status.pdf",
+  html="/tmp/q4-status.html"
 )
 ```
 
 ## See also
-- `pdf.merge` — combine an existing cover with a body PDF.
-- `pdf.see` — render the resulting PDF as page images for verification.
-- `xlsx.sql` — compute the aggregates you'll put into the report before calling `pdf.create`.
+- `html.create` — author the same content as a self-contained HTML
+  report (good starting point — pipe its output here for the PDF).
+- `xlsx.sql` — compute aggregates *before* you compose the HTML.
+- `pdf.see` — visual QA on the resulting PDF (max 5 pages per call).
+- `pdf.extract_text`, `pdf.merge`, `pdf.split`, `pdf.encrypt` — operate
+  on the produced PDF further.
 
 </details>
 
@@ -1199,6 +1817,956 @@ Call: `pdf.split(path="/tmp/big.pdf", pages="1,3,7-9", output="/tmp/sel.pdf")`
 ## See also
 - `pdf.merge` — recombine extracts.
 - `pdf.see` — verify what is on a page before splitting.
+
+</details>
+
+### `pptx`
+
+#### `pptx.convert` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.convert
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, write, convert]
+---
+
+# pptx.convert
+
+## Purpose
+Convert a `.pptx` deck to a `.pdf` file using LibreOffice (`soffice`) in
+headless mode. The resulting PDF has one page per slide and preserves
+fonts/colours/charts well enough for almost any review purpose.
+
+## When to use
+- The user asks to "export the deck as PDF" / "share a PDF copy".
+- A downstream skill needs a PDF rendering of the deck (e.g. to call
+  `pdf.extract_text` for higher-fidelity text, or to attach to an email).
+- You want to feed the deck into a tool that only accepts PDFs.
+
+## When NOT to use
+- For raster page images — use `pptx.see` instead (it goes through PDF
+  too but returns PNG bytes ready for the model to look at).
+- To extract slide text — `pptx.extract_text` is much faster and runs
+  without LibreOffice.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pptx` file. |
+| output | string | yes | Destination `.pdf` path (must end in `.pdf`). |
+| overwrite | bool | no | If true, replace the output file if it already exists. |
+| timeout_seconds | int | no | Hard limit on the LibreOffice subprocess (default 120). |
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    output: "<path>",
+    size_bytes: <int>
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `invalid_input` — `output` does not end in `.pdf`.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — LibreOffice (`soffice`) is not on `PATH`.
+- `timeout` — LibreOffice did not finish within `timeout_seconds`.
+- `convert_failed` — LibreOffice returned a non-zero exit code.
+
+## Examples
+### Export to PDF
+Call: `pptx.convert(path="/tmp/deck.pptx", output="/tmp/deck.pdf")`
+
+### Overwrite an existing PDF
+Call: `pptx.convert(path="/tmp/deck.pptx", output="/tmp/deck.pdf", overwrite=true)`
+
+## See also
+- `pptx.see` — render selected slides as PNG images for visual inspection.
+- `pdf.see`, `pdf.extract_text` — operate on the resulting PDF.
+
+</details>
+
+#### `pptx.create` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.create
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, write, create, deck]
+---
+
+# pptx.create
+
+## Purpose
+Author a brand-new PowerPoint deck from a structured list of slide
+objects. Each slide picks one of a small set of opinionated layouts
+(`cover`, `title`, `section`, `content`, `two_column`, `kpi`, `table`,
+`chart`, `image`, `image_text`, `quote`, `conclusion`) and the engine
+draws it with the chosen theme — covers + closers get a full-bleed
+primary background, content slides get a clean title bar, KPI rows get
+flat cards, charts use native PowerPoint chart objects, and so on.
+
+Pick a theme (`default`, `professional`, `modern`, `minimal`,
+`vibrant`, `dark`, `midnight_executive`, `forest_moss`, `terracotta`)
+or pass a custom palette object. The engine handles all the
+PowerPoint XML gotchas (text-frame padding, blank-layout selection,
+slide size in EMUs, font fallbacks).
+
+Prefer this over hand-rolling python-pptx scripts: it bakes in the
+visual conventions from the upstream Anthropic `pptx` skill (varied
+layouts, no plain title+bullet slides, bold titles, consistent
+margins) and produces decks that look authored rather than templated.
+
+## When to use
+- The user asks for a deck / pitch / presentation / slides "from
+  scratch" / from supplied data.
+- A skill needs to materialise a structured output (KPIs, tables,
+  bullets, narrative) as a `.pptx` deliverable.
+
+## When NOT to use
+- To **edit** an existing deck — use `pptx.merge` (cover + body),
+  `pptx.split` (subset/reorder), or unpack the XML manually for
+  surgical edits.
+- For a PDF report — use `pdf.create`.
+- For a spreadsheet — use `xlsx.write`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| output | string | yes | Destination `.pptx` path. Must end in `.pptx`. |
+| slides | object[] | yes | Ordered list of slide objects (see below). |
+| theme | string \| object | no | Theme name or custom palette. Default `"professional"`. |
+| layout | string | no | `"16x9"` (default, 13.333×7.5in), `"16x10"`, `"4x3"`, `"wide"`. |
+| title | string | no | Deck metadata: title. |
+| author | string | no | Deck metadata: author. |
+| subject | string | no | Deck metadata: subject. |
+| page_numbers | bool | no | If true, draw `N / total` in the bottom-right of every slide (skipped on the cover). |
+| overwrite | bool | no | If true, replace the output file if it already exists. |
+
+## Slide types
+
+Every slide is `{"type": "<name>", ...fields, "notes": "<optional>"}`.
+
+| type | required fields | notable optional fields |
+|---|---|---|
+| `cover` | `title` | `subtitle`, `tagline` |
+| `title` | `text` | `subtitle` |
+| `section` | `title` | `label` (small caps eyebrow) |
+| `content` | `title` | `subtitle`, `body`, `bullets` (`[str]` or `[{text, level}]`) |
+| `two_column` | `title` | `left` and `right`: `{header?, items: [str\|{text}]}` |
+| `kpi` | `title`, `items` | `items`: `[{label, value, delta?, color?}]` (2-6 cards) |
+| `table` | `title`, `rows` | `header` (bool, default true) — first row styled as header |
+| `chart` | `title`, `kind`, `labels`, `data` | `series_names`, `kind`: `bar`/`column`/`barh`/`line`/`pie`/`doughnut`/`area` |
+| `image` | `title`, `path` | `caption` |
+| `image_text` | `title`, `path` | `image_side` (`left`/`right`), `body`, `bullets` |
+| `quote` | `text` | `attribution` |
+| `conclusion` | `title` | `subtitle` |
+
+All text fields take plain strings — colour, weight, and font are
+controlled by the theme and the slide type, not by inline markup.
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    output: "<absolute path>",
+    slide_count: <int>,
+    size_bytes: <int>,
+    theme: "<name>|custom",
+    layout: "16x9|16x10|4x3|wide",
+    slides_rendered: ["cover", "content", "kpi", ...]
+  }
+}
+```
+
+## Errors
+- `invalid_input` — `output` does not end in `.pptx`, or `slides` is empty.
+- `output_exists` — destination already exists and `overwrite=false`.
+- `dependency_missing` — `python-pptx` is not installed.
+- `create_failed` — the build raised (the message includes the cause).
+
+## Examples
+
+### Short pitch deck
+Call:
+```
+pptx.create(
+  output="/tmp/q4-pitch.pptx",
+  theme="midnight_executive",
+  title="Q4 Pitch",
+  page_numbers=true,
+  slides=[
+    {"type": "cover", "title": "Q4 Strategy", "subtitle": "Project Lighthouse",
+     "tagline": "Prepared for the executive team"},
+    {"type": "section", "label": "Where we are", "title": "Q3 in review"},
+    {"type": "kpi", "title": "Headline numbers", "items": [
+      {"label": "ARR", "value": "$12.4M", "delta": "+24% YoY"},
+      {"label": "Net new logos", "value": "37"},
+      {"label": "Gross margin", "value": "72%"},
+      {"label": "Burn", "value": "$1.1M/mo", "color": "#fee2e2"}
+    ]},
+    {"type": "content", "title": "What worked",
+     "bullets": [
+       "Channel partnerships drove 40% of new pipeline",
+       "Self-serve trial → paid conversion at 14%",
+       {"text": "EU launch shipped on schedule", "level": 0}
+     ]},
+    {"type": "two_column", "title": "Strengths vs. risks",
+     "left":  {"header": "Strengths", "items": ["Brand recognition", "Engineering velocity"]},
+     "right": {"header": "Risks",     "items": ["Concentration in 3 accounts", "Talent retention"]}},
+    {"type": "chart", "kind": "bar",
+     "title": "Quarterly revenue", "labels": ["Q1", "Q2", "Q3", "Q4"],
+     "data": [[2.1, 2.6, 3.1, 4.6]], "series_names": ["Revenue ($M)"]},
+    {"type": "table", "title": "Top accounts",
+     "rows": [["Account", "ARR", "Owner"],
+              ["Acme",    "$1.4M", "JR"],
+              ["Globex",  "$1.1M", "PL"],
+              ["Initech", "$0.9M", "AM"]]},
+    {"type": "conclusion", "title": "Ship it.",
+     "subtitle": "Next review: 2026-01-15"}
+  ]
+)
+```
+
+### Image + bullets
+Call:
+```
+pptx.create(
+  output="/tmp/product.pptx",
+  theme="modern",
+  slides=[
+    {"type": "image_text", "title": "Roadmap",
+     "path": "/tmp/screenshots/dash.png", "image_side": "left",
+     "bullets": ["New analytics view", "SAML SSO", "Audit log export"]}
+  ]
+)
+```
+
+## See also
+- `pptx.see` — render the resulting deck as page images for visual QA.
+  **Always do this once after `pptx.create` and look for the issues
+  listed in the PPTX skill QA checklist.**
+- `pptx.convert` — export the deck to PDF.
+- `pdf.create` — same idea for PDFs.
+
+</details>
+
+#### `pptx.extract_notes` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.extract_notes
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, read, notes]
+---
+
+# pptx.extract_notes
+
+## Purpose
+Return only the speaker notes for every (or selected) slide of a deck.
+Equivalent to `pptx.extract_text(include_notes=true)` but without the
+visible body text — useful when you want a clean view of the
+presenter's narrative.
+
+## When to use
+- The user asks for "the speaker notes" / "the script" / "what the
+  presenter says".
+- You want to compare the on-slide content (already in `extract_text`)
+  with the off-slide narrative (`extract_notes`).
+
+## When NOT to use
+- When the user wants the full slide content too — use
+  `pptx.extract_text` with `include_notes=true`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pptx` file. |
+| slides | string | no | 1-based slide spec; omit for every slide. |
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    slide_count: <int>,
+    slides_with_notes: <int>,
+    slides: [{ slide: <1-based>, notes: <str> }, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `dependency_missing` — `python-pptx` is not installed.
+- `slide_out_of_range` / `invalid_input` — bad `slides` spec.
+
+## Examples
+### All notes
+Call: `pptx.extract_notes(path="/tmp/deck.pptx")`
+
+### Notes for slides 3-7
+Call: `pptx.extract_notes(path="/tmp/deck.pptx", slides="3-7")`
+
+## See also
+- `pptx.extract_text` — full slide content plus optional notes.
+
+</details>
+
+#### `pptx.extract_text` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.extract_text
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, read, text]
+---
+
+# pptx.extract_text
+
+## Purpose
+Extract the visible text of every (or a selected subset of) slide in a
+PowerPoint deck, plus the speaker notes by default. Walks every shape,
+including tables and grouped shapes, joining lines per shape.
+
+## When to use
+- The user asks "what does the deck say" / "summarise these slides" /
+  "what's on slide 5".
+- A skill needs the text of specific slides to do downstream
+  summarisation, translation, or comparison.
+- You want notes too — they are returned alongside the slide body when
+  `include_notes=true` (default).
+
+## When NOT to use
+- For visual layout, charts, embedded images, or anything appearance-
+  related — use `pptx.see`.
+- For speaker notes only — `pptx.extract_notes` returns the same data in
+  a leaner shape.
+- For converting the deck to PDF or rendering — use `pptx.convert` /
+  `pptx.see`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pptx` file. |
+| slides | string | no | 1-based slide spec like `"1"`, `"1-3"`, `"1,3-5,8"`. Omit for every slide. |
+| include_notes | bool | no | If true (default), also return the speaker notes per slide. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    slide_count: <int>,
+    char_count: <int>,
+    slides: [
+      { slide: <1-based>, title: <str|null>, text: <str>, notes: <str> },
+      ...
+    ]
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input file.
+- `dependency_missing` — `python-pptx` is not installed.
+- `slide_out_of_range` / `invalid_input` — bad `slides` spec.
+
+## Examples
+### Whole deck
+Call: `pptx.extract_text(path="/tmp/deck.pptx")`
+
+### Slides 1-3 with notes
+Call: `pptx.extract_text(path="/tmp/deck.pptx", slides="1-3", include_notes=true)`
+
+### Slide 7 only, no notes
+Call: `pptx.extract_text(path="/tmp/deck.pptx", slides="7", include_notes=false)`
+
+## See also
+- `pptx.read` — slide count + per-slide metadata first, before extracting.
+- `pptx.extract_notes` — notes only.
+- `pptx.see` — image renders for visual content.
+
+</details>
+
+#### `pptx.from_html` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.from_html
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, write, create, deck, html]
+---
+
+# pptx.from_html
+
+## Purpose
+Render a complete HTML document into a **picture-per-slide** PowerPoint
+deck. Each rendered page becomes one slide; the design is the design
+WeasyPrint produces — gradients, web fonts, full-bleed covers,
+arbitrary aspect ratios, anything CSS can express. Same input
+convention and same engine as `pdf.create`, so if you can render a PDF
+you already know how to render a deck.
+
+The trade: every slide is a single full-bleed Picture shape. **The
+deck is presentation-grade, not edit-grade.** If the user will edit
+the deck in PowerPoint after delivery, use `pptx.create` instead (its
+element DSL produces native shapes, text boxes, tables, and charts).
+
+## When to use
+- The user wants a polished, design-rich deck for a meeting / review /
+  client share — not something to edit downstream.
+- You need design surface that `pptx.create` can't reach: custom
+  fonts, gradients, exotic aspect ratios (square, portrait, social),
+  arbitrary layouts.
+- You already authored an HTML report with `html.create` (or by hand)
+  and want a deck version of the same content.
+
+## When NOT to use
+- The user said "I'll tweak it in PowerPoint" → use `pptx.create`.
+- The user wants a paginated document (PDF, report, memo) → use
+  `pdf.create`.
+- The deliverable is a web page → use `html.create`.
+
+## Parameters
+- `output` — destination `.pptx` path. Parent dirs are created.
+- `html` — **either** a complete HTML document as a string (must start
+  with `<!doctype html>` and contain `<html>` / `<head>` / `<body>`),
+  **or** the absolute path to a `.html` / `.htm` file. Same rule as
+  `pdf.create`: strings ≤ 1 KB, single-line, ending in `.html`/`.htm`
+  are treated as a path; everything else is treated as raw HTML.
+
+  **Critical:** declare exactly ONE `@page` rule. Its `size` becomes
+  the slide size. Recommended:
+  - 16:9 widescreen: `@page { size: 13.333in 7.5in; margin: 0 }`
+  - 4:3 classic:     `@page { size: 10in 7.5in; margin: 0 }`
+  - Square (social): `@page { size: 1080px 1080px; margin: 0 }`
+  - Portrait story:  `@page { size: 1080px 1920px; margin: 0 }`
+
+  Each slide is one HTML page, so use `break-before: page` on section
+  containers to force a slide break, or size sections to exactly fill
+  one page so they break naturally.
+
+- `notes` — optional list of speaker-note strings, one per slide in
+  slide order. Pass `null` for slides you don't want notes on. Length
+  ≤ slide_count.
+- `image_dpi` — rasterisation DPI, 36–600 (default 192). 192 looks
+  crisp on Retina and 1080p projectors. Bump to 300+ for print, drop
+  to 96 for cheap previews.
+- `image_format` — `png` (default, lossless, transparency) or
+  `jpeg` (smaller files on photo-heavy designs).
+- `jpeg_quality` — 1–100 (default 88), used when `image_format='jpeg'`.
+- `title`, `author`, `subject` — deck metadata (shows up in
+  PowerPoint → File → Info and in search indexes).
+- `engine` — `auto` (default) | `weasyprint` | `libreoffice`. Use
+  WeasyPrint when at all possible: LibreOffice silently drops `@page`
+  rules, which means your slide size won't be what you asked for.
+- `timeout_seconds` — LibreOffice subprocess timeout (fallback path).
+- `overwrite` — replace an existing output file.
+
+## Returns
+```jsonc
+{
+  ok: true,
+  data: {
+    output:          "<path>",
+    size_bytes:      <int>,
+    slide_count:     <int>,
+    engine:          "weasyprint" | "libreoffice",
+    image_format:    "png" | "jpeg",
+    image_dpi:       <int>,
+    slide_width_in:  <float>,   // derived from the @page size
+    slide_height_in: <float>,
+    warnings:        [<string>, ...]
+  }
+}
+```
+
+## Errors
+- `invalid_input` — `output` isn't `.pptx`, `html` missing/empty/
+  fragment, `image_dpi` out of range, `image_format` not png/jpeg,
+  `notes` longer than the rendered deck, or the HTML file doesn't
+  exist.
+- `output_exists` — destination exists and `overwrite=false`.
+- `dependency_missing` — `pypdfium2` not installed, or WeasyPrint
+  native libs unavailable AND `engine="weasyprint"` was forced.
+- `render_failed` — intermediate PDF couldn't be opened / had zero
+  pages / a specific page failed to rasterise.
+- `create_failed` — catch-all for downstream python-pptx failures.
+
+## Designing for slides (vs. pages)
+
+The single biggest design difference between a slide and a PDF page:
+**margin should usually be 0** and you should paint your own padding
+inside the body. Otherwise WeasyPrint puts a hairline white border
+around each slide and it looks like the deck was photocopied badly.
+
+```html
+<style>
+  @page { size: 13.333in 7.5in; margin: 0 }
+  body  { margin: 0; font: 18pt/1.45 'Inter', system-ui, sans-serif; color: #0f172a; }
+  .slide {
+    width: 13.333in; height: 7.5in;
+    padding: 0.75in;
+    box-sizing: border-box;
+    page-break-after: always;   /* one .slide per slide */
+    display: flex; flex-direction: column;
+  }
+  .slide:last-child { page-break-after: auto; }
+  .slide.cover {
+    padding: 0;
+    background: radial-gradient(circle at 20% 0%, #312e81, #0f172a 70%);
+    color: white;
+    justify-content: flex-end;
+  }
+  .slide.cover .wrap { padding: 1in; }
+  .slide.cover h1 { font-size: 84pt; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+</style>
+```
+
+The `.slide { page-break-after: always }` trick is the standard way to
+guarantee one HTML container = one slide. Size the container to your
+`@page` exactly and you get pixel-precise control over each slide's
+content.
+
+## Examples
+
+### Minimal — one-slide title card
+```
+pptx.from_html(
+  output="/tmp/intro.pptx",
+  html="""<!doctype html><html><head><meta charset='utf-8'>
+    <style>
+      @page { size: 13.333in 7.5in; margin: 0 }
+      body  { margin: 0; font-family: 'Helvetica Neue', sans-serif; }
+      .s    { width: 13.333in; height: 7.5in; background: #0f172a; color: white;
+              display: flex; align-items: center; justify-content: center;
+              text-align: center; flex-direction: column; }
+      h1    { font-size: 80pt; margin: 0 0 0.5in; letter-spacing: -0.02em; }
+      p     { font-size: 22pt; opacity: 0.7; margin: 0; }
+    </style></head><body>
+    <div class="s"><h1>Q4 Review</h1><p>CIB Gen-AI · January 8, 2026</p></div>
+  </body></html>"""
+)
+```
+
+### Multi-slide deck with speaker notes
+```
+pptx.from_html(
+  output="/tmp/q4.pptx",
+  title="Q4 Review",
+  author="CIB Gen-AI",
+  notes=[
+    "Open with the bottom line — stock cover dropped 14%.",
+    "Walk through the three drivers; don't read the numbers.",
+    "Hand over to Sam for the remediation plan."
+  ],
+  html="""<!doctype html><html><head><meta charset='utf-8'>
+    <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap'>
+    <style>
+      @page { size: 13.333in 7.5in; margin: 0 }
+      body  { margin: 0; font-family: 'Inter', sans-serif; color: #0f172a; }
+      .slide { width: 13.333in; height: 7.5in; padding: 0.75in;
+               box-sizing: border-box; page-break-after: always;
+               display: flex; flex-direction: column; }
+      .slide:last-child { page-break-after: auto; }
+      .cover { padding: 0; background: radial-gradient(circle at 20% 0%, #312e81, #0f172a 70%);
+               color: white; justify-content: flex-end; }
+      .cover .wrap { padding: 1in; }
+      .cover h1 { font-size: 84pt; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+      .cover p  { font-size: 20pt; opacity: 0.7; }
+      h2 { font-size: 40pt; font-weight: 800; margin: 0 0 0.4in; }
+      .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3in; }
+      .kpi  { background: #f1f5f9; border-radius: 0.15in; padding: 0.35in; }
+      .kpi .v { font-size: 44pt; font-weight: 800; }
+      .kpi .l { font-size: 14pt; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; }
+      .next  { text-align: center; flex: 1; display: flex;
+               flex-direction: column; justify-content: center; }
+      .next h1 { font-size: 64pt; font-weight: 800; margin: 0 0 0.3in; }
+      .next p  { font-size: 22pt; color: #475569; margin: 0; }
+    </style></head><body>
+    <section class='slide cover'><div class='wrap'>
+      <h1>Q4 Review</h1><p>CIB Gen-AI · January 8, 2026</p>
+    </div></section>
+    <section class='slide'>
+      <h2>At a glance</h2>
+      <div class='kpis'>
+        <div class='kpi'><div class='l'>Stock cover</div><div class='v'>-14%</div></div>
+        <div class='kpi'><div class='l'>SKUs</div><div class='v'>1,042</div></div>
+        <div class='kpi'><div class='l'>Stockouts</div><div class='v'>37</div></div>
+        <div class='kpi'><div class='l'>On-hand $</div><div class='v'>$4.2M</div></div>
+      </div>
+    </section>
+    <section class='slide next'>
+      <h1>Over to Sam</h1><p>Remediation plan</p>
+    </section>
+  </body></html>"""
+)
+```
+
+### From an `html.create` report
+```
+pptx.from_html(
+  output="/tmp/readout.pptx",
+  html="/tmp/readout.html"
+)
+```
+(Tip: when adapting an `html.create` report for slides, override
+`@page` to your slide size and add `margin: 0` — the report's print
+geometry was tuned for paper, not slides.)
+
+## See also
+- `pptx.create` — author an **editable** deck from a structured element
+  DSL. Use this when the user will modify the deck downstream.
+- `pdf.create` — same engine, paginated PDF output instead of a deck.
+- `pptx.see` — visual QA on the produced deck (max 5 slides per call).
+- `pptx.extract_notes`, `pptx.merge`, `pptx.split`, `pptx.convert` —
+  operate on the produced deck further.
+
+</details>
+
+#### `pptx.merge` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.merge
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, write, combine]
+---
+
+# pptx.merge
+
+## Purpose
+Concatenate two or more `.pptx` files into a single deck. The output
+inherits the slide master, theme, and slide size of the **first** input.
+Slides from subsequent decks are appended in order; their shapes are
+cloned onto a matching layout from the first deck (falling back to
+"Blank" if no layout name matches).
+
+## When to use
+- The user wants to stitch together cover/body/appendix decks.
+- A skill needs to bolt a programmatically-generated cover onto an
+  existing deck.
+
+## When NOT to use
+- To rearrange slides inside a single deck — use `pptx.split` with a
+  reordered `slides=` spec, then save as a new file.
+- When you must preserve every decks' theme — `pptx.merge` standardises
+  on the first input's theme. If themes diverge significantly, consider
+  converting the others to images and rebuilding via `pptx.create`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| inputs | string[] | yes | List of `.pptx` paths, in the order to concatenate. At least 2. |
+| output | string | yes | Destination `.pptx` path. |
+| overwrite | bool | no | If true, replace the output file when it exists. |
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    output: "<path>",
+    slide_count: <int>,
+    source_count: <int>,
+    appended: <int>   // slides added from inputs 2..N
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `invalid_input` — fewer than 2 inputs, or output doesn't end in `.pptx`.
+- `output_exists` — destination exists and `overwrite=false`.
+- `merge_failed` — a slide copy failed (the message includes the source).
+- `dependency_missing` — `python-pptx` is not installed.
+
+## Examples
+### Cover + body
+Call:
+```
+pptx.merge(
+  inputs=["/tmp/cover.pptx", "/tmp/body.pptx"],
+  output="/tmp/full.pptx"
+)
+```
+
+### Three-deck stitch with overwrite
+Call:
+```
+pptx.merge(
+  inputs=["/tmp/intro.pptx", "/tmp/main.pptx", "/tmp/appendix.pptx"],
+  output="/tmp/full.pptx",
+  overwrite=true
+)
+```
+
+## See also
+- `pptx.split` — extract a subset of slides into a new deck.
+- `pptx.create` — author a fresh deck from structured data.
+
+</details>
+
+#### `pptx.read` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.read
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, read, metadata]
+---
+
+# pptx.read
+
+## Purpose
+Open a PowerPoint deck and return its metadata, slide dimensions, and a
+per-slide overview (index, title, layout name, shape count, whether the
+slide has speaker notes). Use this first whenever you need to know how
+big a deck is or what's in it before calling a heavier extraction tool.
+
+## When to use
+- The user hands you a `.pptx` path and asks "what is this" / "how many
+  slides" / "what's the deck about".
+- A skill needs the slide count to drive a `slides=` argument in a
+  follow-up call to `pptx.extract_text`, `pptx.split`, or `pptx.see`.
+- You want to inventory slide layouts before reusing the deck as a
+  template.
+
+## When NOT to use
+- For the actual text content — use `pptx.extract_text`.
+- For visually inspecting a slide — use `pptx.see` (renders slides as
+  images).
+- For converting to PDF — use `pptx.convert`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pptx` file. |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    path: "<resolved path>",
+    slide_count: <int>,
+    slide_width_emu: <int>,
+    slide_height_emu: <int>,
+    slide_width_in: <float>,
+    slide_height_in: <float>,
+    metadata: { title, author, subject, keywords, category, comments, last_modified_by },
+    slides: [{ index, title, layout, shape_count, has_notes }, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` — path does not exist.
+- `unsupported_format` — file does not have a `.pptx` extension or is unreadable.
+- `dependency_missing` — `python-pptx` is not installed in this environment.
+
+## Examples
+### Inspect a deck
+Call: `pptx.read(path="/tmp/quarterly-update.pptx")`
+Returns: `{ok: true, data: {slide_count: 18, metadata: {title: "Q4 Update"}, slides: [...]}}`
+
+## See also
+- `pptx.extract_text` — actual slide text content.
+- `pptx.see` — rasterise slides as images for visual inspection.
+- `pptx.convert` — turn the whole deck into a PDF.
+
+</details>
+
+#### `pptx.see` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.see
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, read, vision]
+---
+
+# pptx.see
+
+## Purpose
+Rasterise up to 5 slides of a PowerPoint deck and inject them into the
+conversation as images, so the model can *look* at the slide rather than
+only parse its text. Mirrors `pdf.see` for `.pptx` files: under the hood
+the deck is converted to PDF once (`soffice --convert-to pdf`) and the
+selected pages are rendered with `pypdfium2`.
+
+## When to use
+- The user asks about a chart, diagram, layout, icon, image, or visual
+  treatment that text extraction cannot recover.
+- `pptx.extract_text` returned nothing useful (the slide is image-heavy)
+  and you need to see what's actually on it.
+- You want to verify your own newly-authored deck (after `pptx.create`)
+  looks right before declaring success. **Always render with `pptx.see`
+  at least once after `pptx.create` and look for the issues listed in
+  the QA checklist in the PPTX skill.**
+- You want to compare two slides side by side.
+
+## When NOT to use
+- For the plain text body — `pptx.extract_text` is faster and feeds
+  richer content per token.
+- For tables that have an embedded text layer in the deck —
+  `pptx.extract_text` already gives you cell text. `pptx.see` is for the
+  visual content only.
+- To process many slides at once — this tool refuses more than 5 slides
+  per call (`too_many_slides`). Split the request or pick which 5
+  matter most.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to a `.pptx` file. |
+| slides | string | no | 1-based slide spec; max 5, e.g. `"1"`, `"2-4"`, `"1,3,5"`. Omit to render slide 1 only. |
+| scale | float | no | Render scale; `2.0` ≈ 200 dpi. Keep ≤ `3.0` to stay within model image limits. Default `2.0`. |
+| timeout_seconds | int | no | Hard limit on the LibreOffice subprocess (default 120). |
+
+## Returns
+On success:
+```
+{
+  ok: true,
+  data: {
+    path: "<resolved>",
+    slide_count: <total slides in deck>,
+    rendered: [{ slide: <1-based>, bytes: <b64 length> }, ...],
+    scale: <float>
+  },
+  images: [ToolImage, ...]   // attached to the next turn as multimodal content
+}
+```
+The framework automatically appends the images to the next user turn so
+the model can see them. The `data` payload itself is the textual
+summary.
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `dependency_missing` — `pypdfium2` is not installed, or
+  LibreOffice (`soffice`) is not on `PATH`.
+- `slide_out_of_range` / `invalid_input` — bad `slides` spec.
+- `too_many_slides` — more than 5 slides requested in a single call.
+- `timeout` / `convert_failed` — LibreOffice failed to produce the
+  intermediate PDF.
+- `render_failed` — `pypdfium2` raised on a specific slide.
+
+## Examples
+### See slide 1
+Call: `pptx.see(path="/tmp/deck.pptx")`
+
+### See the appendix
+Call: `pptx.see(path="/tmp/deck.pptx", slides="14-18")`
+
+### See three scattered slides
+Call: `pptx.see(path="/tmp/big-deck.pptx", slides="1,7,12")`
+
+## See also
+- `pptx.extract_text` — far cheaper for text content.
+- `pptx.convert` — produce the PDF without rendering page images.
+- `pptx.read` — to know the slide count before choosing which to render.
+
+</details>
+
+#### `pptx.split` &nbsp; <sub>v1 · internal · owner: team-doc-ai</sub>
+
+<details><summary>card</summary>
+
+---
+tool: pptx.split
+version: 1
+owner: team-doc-ai
+classification: [internal]
+tags: [pptx, write, split]
+---
+
+# pptx.split
+
+## Purpose
+Extract a subset of slides from a deck (or reorder them) into a new
+`.pptx` file. Preserves the deck's slide master, theme, and the order
+given in `slides=`.
+
+## When to use
+- The user wants to keep slides 1-5 / 3,7,9 only.
+- A skill needs to reorder slides (pass them in the new order).
+- You need to share a single section of a long deck.
+
+## When NOT to use
+- To combine multiple decks — use `pptx.merge`.
+- To author a brand-new deck — use `pptx.create`.
+
+## Parameters
+| name | type | required | description |
+|---|---|---|---|
+| path | string | yes | Path to the source `.pptx` file. |
+| slides | string | yes | 1-based slide spec to keep, e.g. `"1-5"` or `"1,3,7-9"`. Order is preserved. |
+| output | string | yes | Destination `.pptx` path. |
+| overwrite | bool | no | If true, replace the output file if it already exists. |
+
+## Returns
+```
+{
+  ok: true,
+  data: {
+    output: "<path>",
+    slide_count: <int>,
+    selected_slides: [<1-based slide numbers in output order>, ...]
+  }
+}
+```
+
+## Errors
+- `file_not_found` / `unsupported_format` — bad input.
+- `invalid_input` — output doesn't end in `.pptx`, or `slides` spec is empty.
+- `output_exists` — destination exists and `overwrite=false`.
+- `slide_out_of_range` — `slides` spec refers to a missing slide.
+- `split_failed` — XML manipulation failed (rare; message includes cause).
+- `dependency_missing` — `python-pptx` is not installed.
+
+## Examples
+### Keep first five
+Call: `pptx.split(path="/tmp/deck.pptx", slides="1-5", output="/tmp/intro.pptx")`
+
+### Reorder
+Call: `pptx.split(path="/tmp/deck.pptx", slides="3,1,2", output="/tmp/reordered.pptx")`
+
+## See also
+- `pptx.merge` — combine multiple decks.
+- `pptx.read` — slide count before choosing a range.
 
 </details>
 
@@ -2469,9 +4037,10 @@ Call: `xlsx.write(output="/tmp/loans.csv", headers=["id","amount"], rows=[["L1",
 ## By tag
 
 - **catalog** — `repo.read_catalog`, `repo.search_catalog`
-- **combine** — `pdf.merge`
-- **convert** — `xlsx.convert`
-- **create** — `pdf.create`, `xlsx.write`
+- **combine** — `pdf.merge`, `pptx.merge`
+- **convert** — `html.to_pdf`, `pptx.convert`, `xlsx.convert`
+- **create** — `html.create`, `pdf.create`, `pptx.create`, `pptx.from_html`, `xlsx.write`
+- **deck** — `pptx.create`, `pptx.from_html`
 - **dedup** — `repo.search_catalog`
 - **deterministic** — `text.extract_lines`, `text.word_count`
 - **diagnostic** — `core.echo`
@@ -2483,32 +4052,35 @@ Call: `xlsx.write(output="/tmp/loans.csv", headers=["id","amount"], rows=[["L1",
 - **format** — `xlsx.format`
 - **forms** — `pdf.fill_form`, `pdf.form_fields`
 - **formula** — `xlsx.edit_cells`, `xlsx.recalc`
+- **html** — `html.create`, `html.extract_text`, `html.read`, `html.see`, `html.to_pdf`, `pptx.from_html`
 - **internal-docs** — `docstore.fetch`
 - **meta** — `orchestrator.delegate`
-- **metadata** — `pdf.read`, `xlsx.info`
+- **metadata** — `html.read`, `pdf.read`, `pptx.read`, `xlsx.info`
 - **metrics** — `text.word_count`
+- **notes** — `pptx.extract_notes`
 - **numeric** — `text.extract_lines`
 - **ocr** — `pdf.ocr`
 - **pack-authoring** — `repo.scaffold_pack`
 - **pdf** — `pdf.create`, `pdf.decrypt`, `pdf.encrypt`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.fill_form`, `pdf.form_fields`, `pdf.merge`, `pdf.ocr`, `pdf.read`, `pdf.rotate`, `pdf.see`, `pdf.split`
+- **pptx** — `pptx.convert`, `pptx.create`, `pptx.extract_notes`, `pptx.extract_text`, `pptx.from_html`, `pptx.merge`, `pptx.read`, `pptx.see`, `pptx.split`
 - **query** — `xlsx.sql`
-- **read** — `docstore.fetch`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.form_fields`, `pdf.ocr`, `pdf.read`, `pdf.see`, `repo.read_catalog`, `repo.read_doc`, `xlsx.info`, `xlsx.read`, `xlsx.sql`
+- **read** — `docstore.fetch`, `html.extract_text`, `html.read`, `html.see`, `pdf.extract_tables`, `pdf.extract_text`, `pdf.form_fields`, `pdf.ocr`, `pdf.read`, `pdf.see`, `pptx.extract_notes`, `pptx.extract_text`, `pptx.read`, `pptx.see`, `repo.read_catalog`, `repo.read_doc`, `xlsx.info`, `xlsx.read`, `xlsx.sql`
 - **recalc** — `xlsx.recalc`
 - **reference** — `repo.read_catalog`, `repo.read_doc`
-- **report** — `pdf.create`
+- **report** — `html.create`, `pdf.create`
 - **routing** — `orchestrator.delegate`
 - **scaffold** — `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`
 - **search** — `repo.search_catalog`
 - **security** — `pdf.decrypt`, `pdf.encrypt`
 - **skill-authoring** — `repo.scaffold_skill`
 - **smoke-test** — `core.echo`
-- **split** — `pdf.split`
+- **split** — `pdf.split`, `pptx.split`
 - **spreadsheet** — `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.info`, `xlsx.read`, `xlsx.recalc`, `xlsx.sql`, `xlsx.write`
 - **sql** — `xlsx.sql`
 - **style** — `xlsx.format`
 - **tabular** — `pdf.extract_tables`, `xlsx.read`
-- **text** — `pdf.extract_text`, `text.extract_lines`, `text.word_count`
+- **text** — `html.extract_text`, `pdf.extract_text`, `pptx.extract_text`, `text.extract_lines`, `text.word_count`
 - **tool-authoring** — `repo.scaffold_tool`
 - **transform** — `pdf.rotate`
-- **vision** — `pdf.see`
-- **write** — `pdf.create`, `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`, `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.recalc`, `xlsx.write`
+- **vision** — `html.see`, `pdf.see`, `pptx.see`
+- **write** — `html.create`, `html.to_pdf`, `pdf.create`, `pdf.decrypt`, `pdf.encrypt`, `pdf.fill_form`, `pdf.merge`, `pdf.rotate`, `pdf.split`, `pptx.convert`, `pptx.create`, `pptx.from_html`, `pptx.merge`, `pptx.split`, `repo.scaffold_pack`, `repo.scaffold_skill`, `repo.scaffold_tool`, `xlsx.convert`, `xlsx.edit_cells`, `xlsx.format`, `xlsx.recalc`, `xlsx.write`

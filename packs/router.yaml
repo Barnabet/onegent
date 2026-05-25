@@ -14,6 +14,8 @@ skills:
   - router
   - pdf_handling
   - xlsx_handling
+  - pptx_handling
+  - html_reporting
 
 classification: internal
 allowed_data_sources:

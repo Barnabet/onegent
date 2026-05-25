@@ -1,6 +1,6 @@
 """Tool registrations for the `pdf` domain."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -117,54 +117,63 @@ class SeeParams(BaseModel):
 
 
 class CreateParams(BaseModel):
+    """Inputs for `pdf.create`.
+
+    `pdf.create` renders a single, complete HTML document to PDF. The
+    agent owns the design — page size, margins, fonts, palette, running
+    headers and page counters are all expressed via standard CSS Paged
+    Media in the HTML the agent supplies. See `cards/create.md` for a
+    crash course in the CSS features that survive print.
+    """
+
     output: str = Field(
         ...,
         description="Destination .pdf path. Must end in `.pdf`. Parent dirs are created.",
     )
-    elements: List[Dict[str, Any]] = Field(
+    html: str = Field(
         ...,
         description=(
-            "Ordered list of document elements. Each item is an object with a "
-            "`type` field. Supported types: cover, title, heading, paragraph, "
-            "bullets, numbered, callout, quote, banner, kpi_row, card, columns, "
-            "badges, table, chart, diagram, timeline, shape, image, spacer, "
-            "hrule, page_break. See the card for the schema of each type. "
-            "Inline markup supported in any text field: <b>, <i>, <u>, "
-            "<sub>, <super>, <br/>, <font color='#rrggbb'>, "
-            "<link href='https://...'>."
+            "Either (a) a complete HTML document as a string — must "
+            "begin with `<!doctype html>` and include an `<html>` "
+            "element with a `<head>` (declare your `@page` rule, "
+            "fonts, and styles inside a `<style>` block there); or "
+            "(b) the absolute path to a `.html`/`.htm` file on disk "
+            "(e.g. one produced by `html.create`). Strings under 1 KB "
+            "with no newlines that end in `.html`/`.htm` are treated "
+            "as a path; everything else is treated as raw HTML. The "
+            "tool does NOT wrap fragments, inject styling, or override "
+            "your `@page` rule — what you write is what gets rendered."
         ),
     )
-    theme: Union[str, Dict[str, str]] = Field(
-        "default",
+    title: Optional[str] = Field(
+        None,
         description=(
-            "Theme name (default, professional, modern, minimal, vibrant, "
-            "dark) or a custom object with `primary`/`secondary`/`accent`/"
-            "`text`/`muted`/`surface`/`border` hex colours and optional "
-            "`font`."
+            "PDF metadata: document title. If omitted, WeasyPrint uses "
+            "the document's `<title>` element. Does not affect on-page content."
         ),
     )
-    page_size: str = Field(
-        "letter",
-        description="Page size: 'letter', 'A4', or 'legal'.",
-    )
-    margin: float = Field(
-        54.0,
-        description="Uniform page margin in points (default 54 = 0.75in).",
-    )
-    title: Optional[str] = Field(None, description="PDF metadata: document title.")
-    author: Optional[str] = Field(None, description="PDF metadata: author.")
-    subject: Optional[str] = Field(None, description="PDF metadata: subject.")
-    header: Optional[Union[str, Dict[str, str]]] = Field(
+    author: Optional[str] = Field(
         None,
-        description="Header content. String (centered) or object with `left`/`center`/`right`.",
+        description="PDF metadata: author. Does not affect on-page content.",
     )
-    footer: Optional[Union[str, Dict[str, str]]] = Field(
+    subject: Optional[str] = Field(
         None,
-        description="Footer content. String (centered) or object with `left`/`center`/`right`.",
+        description="PDF metadata: subject. Does not affect on-page content.",
     )
-    page_numbers: bool = Field(
-        False,
-        description="If true, draw 'Page N' in the footer-right of every page.",
+    engine: str = Field(
+        "auto",
+        description=(
+            "Render engine. `auto` (default) tries WeasyPrint first and "
+            "falls back to LibreOffice if WeasyPrint's native libs are "
+            "missing. `weasyprint` forces WeasyPrint (recommended — only "
+            "engine that honours `@page` margin boxes, page counters, "
+            "and repeated table headers). `libreoffice` forces the "
+            "fallback, which silently drops `@page` margin boxes."
+        ),
+    )
+    timeout_seconds: int = Field(
+        120,
+        description="Hard limit on the LibreOffice subprocess (fallback path only).",
     )
     overwrite: bool = Field(
         False,

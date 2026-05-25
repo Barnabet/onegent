@@ -45,7 +45,7 @@ export function ConversationsSidebar({
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 min-w-0 rounded-xl border bg-card p-4">
       <div className="pb-3">
         <Button
           onClick={onCreate}
@@ -58,8 +58,8 @@ export function ConversationsSidebar({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 -mx-2 px-2">
-        <div className="space-y-0.5">
+      <ScrollArea className="flex-1 min-w-0">
+        <div className="space-y-0.5 px-2">
           {conversations.length === 0 && (
             <div className="text-xs text-muted-foreground italic px-2 py-4 text-center">
               No conversations yet.
