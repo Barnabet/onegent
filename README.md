@@ -17,7 +17,7 @@ Five concepts. Learn these and the rest is mechanical:
 | **Tool card** | Markdown telling the model when/how to use the tool. | `tools/<domain>/cards/*.md` |
 | **Skill** | A playbook for a class of tasks. References tools by name. | `skills/<skill>/SKILL.md` |
 | **Pack** | A curated bundle of skills for a persona, with limits + risk review. | `packs/*.yaml` |
-| **Sub-agent** | A worker process the supervisor spawns with exactly one pack loaded. | `orchestrator/` |
+| **Sub-agent** | A model loop bound to at most one pack plus zero-or-more extra skills, dispatched via `orchestrator.delegate`. | `orchestrator/` |
 
 The two rules that make it compound:
 
@@ -109,5 +109,5 @@ onegent/
 - **Language**: Python 3.9+.
 - **LLM**: OpenAI-compatible HTTP, swappable behind `runtime/llm.py`.
 - **Skills + packs**: in-repo, PR-reviewed.
-- **Sub-agents**: separate worker processes (one per request, via `multiprocessing`).
+- **Isolation**: one OS worker process per top-level request (via `multiprocessing`, spawn context). Sub-agents spawned by `orchestrator.delegate` run in-process inside that worker, each bound to 0-or-1 pack and 0-or-N extra skills.
 - **No LangChain / LangGraph.** Thin core, ~one file per concern.
